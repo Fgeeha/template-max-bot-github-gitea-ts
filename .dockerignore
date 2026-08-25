@@ -1,0 +1,35 @@
+# Зависимости и сборочные артефакты — пересобираются внутри образа
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Git и CI
+.git/
+.github/
+.gitea/
+
+# Среда разработки
+.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+
+# Логи и runtime-данные
+logs/
+*.log
+*.sqlite
+*.db
+dump_*.sql
+dump_*.dump
+
+# Dev-артефакты
+coverage/
+.vitest-cache/
+
+# Документация (в образе не нужна)
+docs/
+
+# ВНИМАНИЕ: tests/ и *.md намеренно НЕ исключены.
+# tests/ нужны стадии `test` в Dockerfile — она гоняет линт и vitest внутри
+# образа, проверяя ровно ту среду, что поедет на прод (это делает CI).

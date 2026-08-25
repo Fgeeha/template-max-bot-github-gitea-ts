@@ -1,0 +1,52 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# pnpm
+.pnpm-store/
+
+# Environment
+.env
+.env.local
+.env.*.local
+docker/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Тесты / покрытие / линтеры
+coverage/
+.vitest-cache/
+
+# Логи и runtime-данные
+*.log
+logs/
+outputs/
+*.sqlite
+*.db
+
+# Дампы БД (см. make dump)
+dump_*.sql
+dump_*.dump
+
+# Секреты
+settings.json
+credentials.json
+*.pem
+*.key
+
+# Сертификаты: реальные не коммитим (см. certs/README.md)
+certs/*.crt
+certs/*.pem
+
+# Служебные артефакты AI-тулинга
+.agents/
+.claude-flow/
+.swarm/
+.mcp.json
+ruvector.db
