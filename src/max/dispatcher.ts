@@ -5,9 +5,9 @@ import {
   type BotStarted,
   MessageCallback,
   MessageCreated,
+  parseUpdate,
   type RawUpdate,
   type UpdateEvent,
-  parseUpdate,
 } from "./types.js";
 
 export type Middleware = (next: () => Promise<void>, event: UpdateEvent) => Promise<void>;

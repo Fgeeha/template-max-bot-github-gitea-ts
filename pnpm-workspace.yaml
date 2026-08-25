@@ -1,0 +1,5 @@
+# pnpm 10+ требует явного allowlist для postinstall-скриптов (защита от
+# supply-chain атак). esbuild нужен vitest — без approve его нативный
+# бинарь не скачается, и тесты не запустятся.
+allowBuilds:
+  esbuild: true

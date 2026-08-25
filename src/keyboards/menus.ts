@@ -4,7 +4,7 @@
  * Разделы заданы данными, а не кодом: чтобы добавить пункт меню, достаточно
  * дописать запись в SECTIONS — клавиатура и обработчик подхватят её сами.
  */
-import { InlineKeyboardBuilder, callbackButton, linkButton } from "../max/keyboard.js";
+import { callbackButton, InlineKeyboardBuilder, linkButton } from "../max/keyboard.js";
 import { BackPayload, MenuPayload } from "./callbacks.js";
 
 export interface Section {

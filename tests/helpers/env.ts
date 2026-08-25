@@ -1,5 +1,5 @@
 /** Помощник для тестов конфигурации: задаёт переменные окружения так же, как это делает прод. */
-import { Settings, resetSettingsCache } from "../../src/config.js";
+import { resetSettingsCache, Settings } from "../../src/config.js";
 
 const ENV_KEYS = [
   "MAX_BOT_TOKEN",

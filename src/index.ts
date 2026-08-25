@@ -3,13 +3,13 @@
  * Точка входа бота: выбор polling / webhook по BOT_MODE.
  * Запуск: `pnpm run` (dev, без сборки) или `node dist/index.js` (после `pnpm build`).
  */
-import { type Server, createServer } from "node:http";
-import { type Settings, getSettings } from "./config.js";
+import { createServer, type Server } from "node:http";
+import { getSettings, type Settings } from "./config.js";
 import { registerAll } from "./handlers/index.js";
 import { Bot } from "./max/bot.js";
 import { Dispatcher } from "./max/dispatcher.js";
 import { UpdateType } from "./max/types.js";
-import { RateLimiter, buildTlsCa } from "./runtime.js";
+import { buildTlsCa, RateLimiter } from "./runtime.js";
 import { BackgroundDispatcher, createWebhookListener } from "./webhook.js";
 
 // Типы апдейтов, на которые подписываемся в режиме webhook. В polling

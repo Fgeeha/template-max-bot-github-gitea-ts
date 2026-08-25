@@ -51,7 +51,7 @@ const envSchema = z.object({
   MAX_API_MESSAGE_RPS: z.coerce.number().int().positive().default(2),
 
   // ---- Режим работы ---------------------------------------------------------
-  BOT_MODE: z.nativeEnum(BotMode).default(BotMode.Polling),
+  BOT_MODE: z.enum(BotMode).default(BotMode.Polling),
   WEBHOOK_HOST: z.string().optional(),
   WEBHOOK_PATH: z.string().default("/webhook"),
   WEBHOOK_SECRET: z.string().optional(),

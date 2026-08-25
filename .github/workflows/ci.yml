@@ -25,15 +25,15 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Установить pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Установить Node (+ кэш по pnpm-lock.yaml)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Установить зависимости
@@ -48,15 +48,15 @@ jobs:
       # Плейсхолдер, НЕ секрет: тесты герметичны и в сеть не ходят.
       MAX_BOT_TOKEN: ci-not-a-real-token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Установить pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Установить Node (+ кэш по pnpm-lock.yaml)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Установить зависимости
@@ -75,7 +75,7 @@ jobs:
       contents: read
       packages: write # публикация в GHCR (не на PR)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Валидация compose-файлов
         run: |
@@ -88,12 +88,12 @@ jobs:
           docker compose -f docker/docker-compose.prod.yml --env-file .env config -q
 
       - name: Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Логинимся только когда реально публикуем.
       - name: Логин в GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -101,7 +101,7 @@ jobs:
 
       - name: Теги и метки образа
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -111,7 +111,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Сборка (push только не на PR)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -121,7 +121,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # Публичные источники: у GitHub-раннера нет доступа к контуру.
           build-args: |
-            BASE_IMAGE=node:22-bookworm-slim
+            BASE_IMAGE=node:24-bookworm-slim
             USE_NEXUS_APT=0
             UID=1000
             GID=1000

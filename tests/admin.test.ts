@@ -1,6 +1,6 @@
 /** Проверки служебных команд и форматирования сообщений. */
 import { describe, expect, it } from "vitest";
-import { MAX_MESSAGE_LEN, buildStatusText, splitMessage } from "../src/handlers/admin.js";
+import { buildStatusText, MAX_MESSAGE_LEN, splitMessage } from "../src/handlers/admin.js";
 import { withEnv } from "./helpers/env.js";
 
 describe("admin handler", () => {

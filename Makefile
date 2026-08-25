@@ -7,14 +7,14 @@ COMPOSE ?= docker compose
 # --- Источники образов и пакетов -------------------------------------------
 # Дефолты — зеркала закрытого контура. Для сборки с доступом в интернет:
 #
-#   BASE_IMAGE=node:22-bookworm-slim \
-#   POSTGRES_IMAGE=postgres:16-alpine \
+#   BASE_IMAGE=node:24-bookworm-slim \
+#   POSTGRES_IMAGE=postgres:18-alpine \
 #   USE_NEXUS_APT=0 \
 #   make up-local
 #
 # Движок тоже переопределяется: COMPOSE='podman compose' make up-local
-BASE_IMAGE ?= harbor.volganet.ru/dockerhub-proxy/node:22-bookworm-slim
-POSTGRES_IMAGE ?= harbor.volganet.ru/dockerhub-proxy/postgres:16-alpine
+BASE_IMAGE ?= harbor.volganet.ru/dockerhub-proxy/node:24-bookworm-slim
+POSTGRES_IMAGE ?= harbor.volganet.ru/dockerhub-proxy/postgres:18-alpine
 USE_NEXUS_APT ?= 1
 export BASE_IMAGE POSTGRES_IMAGE USE_NEXUS_APT
 

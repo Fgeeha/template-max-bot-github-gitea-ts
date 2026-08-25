@@ -3,12 +3,12 @@
 # Все внешние источники параметризованы через ARG. По умолчанию — зеркала
 # закрытого контура; для сборки с доступом в интернет переопределите:
 #   docker build \
-#     --build-arg BASE_IMAGE=node:22-bookworm-slim \
+#     --build-arg BASE_IMAGE=node:24-bookworm-slim \
 #     --build-arg USE_NEXUS_APT=0 \
 #     -f docker/Dockerfile .
 
 # ARG до первого FROM — иначе его нельзя подставить в сам FROM.
-ARG BASE_IMAGE="harbor.volganet.ru/dockerhub-proxy/node:22-bookworm-slim"
+ARG BASE_IMAGE="harbor.volganet.ru/dockerhub-proxy/node:24-bookworm-slim"
 
 # ---------------------------------------------------------------------------
 # base — зависимости, код и сборка (tsc), общая основа для test и runtime
@@ -70,8 +70,9 @@ RUN mkdir -p /app/logs \
 RUN corepack enable
 
 # Слой 1 — только манифест и лок-файл: пересобирается лишь при изменении
-# зависимостей, а не на каждую правку кода.
-COPY package.json pnpm-lock.yaml ./
+# зависимостей, а не на каждую правку кода. pnpm-workspace.yaml обязателен —
+# в нём allowBuilds для esbuild (pnpm 10+ блокирует postinstall без него).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN set -eux; \
     if [ -n "${NPM_REGISTRY}" ]; then pnpm config set registry "${NPM_REGISTRY}"; fi; \
     pnpm install --frozen-lockfile

@@ -1,6 +1,6 @@
 /** Проверки ограничителя частоты и загрузки CA-bundle. */
 import { describe, expect, it } from "vitest";
-import { RateLimiter, buildTlsCa } from "../src/runtime.js";
+import { buildTlsCa, RateLimiter } from "../src/runtime.js";
 
 describe("RateLimiter", () => {
   it("пропускает первые maxCalls запросов без задержки", async () => {

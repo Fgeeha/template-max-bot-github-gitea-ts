@@ -6,7 +6,7 @@ import {
   MenuPayload,
   PayloadError,
 } from "../src/keyboards/callbacks.js";
-import { SECTIONS, getSection, mainMenu } from "../src/keyboards/menus.js";
+import { getSection, mainMenu, SECTIONS } from "../src/keyboards/menus.js";
 
 describe("keyboards", () => {
   it("payload меню собирается и разбирается обратно", () => {

@@ -9,7 +9,7 @@
 # добавляйте рядом второй workflow с теми же триггерами, получите двойные прогоны.
 #
 # ПРЕДУСЛОВИЕ ЗАКРЫТОГО КОНТУРА.
-# Раннер должен иметь предустановленный Node 22 (corepack входит в поставку
+# Раннер должен иметь предустановленный Node 24 (corepack входит в поставку
 # Node, отдельный бинарь вендорить не нужно — в отличие от Python-версии
 # шаблона, которой приходится таскать архив uv через build/uv/).
 #
@@ -43,7 +43,7 @@ jobs:
     concurrency:
       group: ci-lint-${{ github.ref }}
       cancel-in-progress: true
-    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-22' }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-24' }}
     steps:
       - name: Checkout
         uses: https://gitea.volganet.ru/actions/checkout@releases/v5
@@ -82,7 +82,7 @@ jobs:
     concurrency:
       group: ci-test-${{ github.ref }}
       cancel-in-progress: true
-    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-22' }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-24' }}
     env:
       # Плейсхолдер, НЕ секрет: бот в CI не запускается, тесты герметичны.
       MAX_BOT_TOKEN: ci-not-a-real-token
@@ -128,7 +128,7 @@ jobs:
     concurrency:
       group: ci-build-${{ github.ref }}
       cancel-in-progress: true
-    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-22' }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-24' }}
     permissions:
       contents: read
     steps:
@@ -267,7 +267,7 @@ jobs:
     concurrency:
       group: cd-prod
       cancel-in-progress: false # идущий релиз не обрываем — на проде это опасно
-    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-22' }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-24' }}
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       image_ref: ${{ steps.resolve.outputs.image_ref }}
@@ -353,7 +353,7 @@ jobs:
     concurrency:
       group: cd-prod
       cancel-in-progress: false
-    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-22' }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-24' }}
     environment: production
     steps:
       - name: Checkout
@@ -554,7 +554,7 @@ jobs:
     concurrency:
       group: cd-prod
       cancel-in-progress: false
-    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-22' }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'node-fix-24' }}
     environment: production
     steps:
       - name: Подготовить SSH-ключ

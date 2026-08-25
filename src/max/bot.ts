@@ -4,8 +4,9 @@
  * официальному API (https://dev.max.ru/); при расхождении с текущей
  * документацией правьте только этот файл, остального кода это не касается.
  */
-import { Agent, request as undiciRequest } from "undici";
+
 import type { Dispatcher } from "undici";
+import { Agent, request as undiciRequest } from "undici";
 import { type RateLimiter, withRateLimitAndRetry } from "../runtime.js";
 import { MaxApiError } from "./errors.js";
 import type { Attachment, RawUpdate } from "./types.js";

@@ -59,7 +59,7 @@ CI/CD под **GitHub Actions** и **Gitea Actions**. TypeScript-аналог ш
 | Скрипт инициализации нового проекта | ✅ |
 | Тесты (36 шт.) | ✅ |
 
-**Стек:** Node.js 22, TypeScript 5, undici (HTTP), zod (конфигурация), pnpm,
+**Стек:** Node.js 24, TypeScript 7, undici (HTTP), zod (конфигурация), pnpm,
 Biome (линт + формат), vitest, Docker. Слой БД — pg + node-pg-migrate
 (опционально). Метрики — prom-client (опционально).
 
@@ -467,8 +467,8 @@ compose-файлов, собирает образ и публикует его �
 **Сборка с доступом в интернет:**
 
 ```bash
-BASE_IMAGE=node:22-bookworm-slim \
-POSTGRES_IMAGE=postgres:16-alpine \
+BASE_IMAGE=node:24-bookworm-slim \
+POSTGRES_IMAGE=postgres:18-alpine \
 USE_NEXUS_APT=0 \
 make up-local
 ```
@@ -480,7 +480,7 @@ Workflow для GitHub уже собирает с публичными исто�
 вендорить бинарь `uv` в `build/uv/`, потому что раннер не может скачать его с
 astral.sh), здесь ничего вендорить не нужно: `corepack` (менеджер пакетных
 менеджеров) входит в поставку Node.js, и `pnpm` активируется одной командой
-`corepack enable`. Раннеру достаточно иметь предустановленный Node 22.
+`corepack enable`. Раннеру достаточно иметь предустановленный Node 24.
 
 **Сертификаты.** Если цепочка API подписана УЦ, которого нет в системном
 хранилище (например, Минцифры РФ), есть два пути — положить `.crt` в

@@ -5,7 +5,7 @@
  * обработку апдейта, а очередь обработки ограничена — при переполнении
  * маршрут отвечает 503, а не копит соединения.
  */
-import { type Server, createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RawUpdate } from "../src/max/types.js";
