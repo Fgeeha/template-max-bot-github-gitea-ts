@@ -8,16 +8,16 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
-import type { RawUpdate } from "./max/types.js";
+import type { Update } from "@maxhub/max-bot-api/types";
 
 const SECRET_HEADER = "x-max-bot-api-secret";
 
 export class BackgroundDispatcher {
-  private readonly dispatchFn: (raw: RawUpdate) => Promise<void>;
+  private readonly dispatchFn: (raw: Update) => Promise<void>;
   private readonly maxPending: number;
   private readonly tasks = new Set<Promise<void>>();
 
-  constructor(dispatchFn: (raw: RawUpdate) => Promise<void>, maxPending: number) {
+  constructor(dispatchFn: (raw: Update) => Promise<void>, maxPending: number) {
     if (maxPending <= 0) throw new Error("maxPending должен быть больше 0");
     this.dispatchFn = dispatchFn;
     this.maxPending = maxPending;
@@ -29,7 +29,7 @@ export class BackgroundDispatcher {
   }
 
   /** Ставит апдейт в обработку. false — очередь переполнена. */
-  submit(eventJson: RawUpdate): boolean {
+  submit(eventJson: Update): boolean {
     if (this.tasks.size >= this.maxPending) {
       console.error(
         `Очередь обработки апдейтов переполнена (${this.maxPending}), апдейт отклонён: ${eventJson.update_type}`,
@@ -141,10 +141,10 @@ async function handle(
     }
   }
 
-  let eventJson: RawUpdate;
+  let eventJson: Update;
   try {
     const raw = await readBody(req);
-    eventJson = JSON.parse(raw) as RawUpdate;
+    eventJson = JSON.parse(raw) as Update;
   } catch {
     sendJson(res, 400, { error: "bad_request" });
     return;

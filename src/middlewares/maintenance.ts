@@ -1,56 +1,53 @@
 /**
  * Maintenance-гейт: пока PROD=false, бот отвечает только администраторам.
  *
- * Регистрируется как outer middleware — перехватывает сообщения, callback'и
- * и bot_started единым кодом, до того как сработают фильтры хендлеров.
+ * Регистрируется через bot.use() — перехватывает сообщения, callback'и и
+ * bot_started единым кодом, до того как сработают фильтры хендлеров.
  */
+import type { Context, MiddlewareFn, NextFn } from "@maxhub/max-bot-api";
 import { getSettings } from "../config.js";
-import type { Middleware } from "../max/dispatcher.js";
-import {
-  BotStarted,
-  ChatType,
-  MessageCallback,
-  MessageCreated,
-  type UpdateEvent,
-} from "../max/types.js";
 
 export const MAINTENANCE_TEXT = "Бот в разработке, скоро откроется.";
 
-export const maintenanceMiddleware: Middleware = async (next, event) => {
+export const maintenanceMiddleware: MiddlewareFn<Context> = async (ctx, next: NextFn) => {
   const settings = getSettings();
   if (!settings.isMaintenance) {
     await next();
     return;
   }
 
-  const ids = event.getIds();
+  const userId = ctx.user?.user_id;
   // Системные события без user_id пропускаем: блокировать нечего и некого.
-  if (!ids?.userId) {
+  if (userId === undefined) {
     await next();
     return;
   }
 
-  if (settings.adminIdsSet.has(ids.userId)) {
+  if (settings.adminIdsSet.has(userId)) {
     await next();
     return;
   }
 
-  await notify(event);
+  await notify(ctx);
 };
 
 /** Сообщает о недоступности способом, подходящим типу события. */
-async function notify(event: UpdateEvent): Promise<void> {
+async function notify(ctx: Context): Promise<void> {
   try {
-    if (event instanceof MessageCallback) {
+    if (ctx.has("message_callback")) {
       // На callback единственный корректный ответ — всплывающее уведомление;
       // отправка сообщения оставит «часики» на кнопке.
-      await event.answer({ notification: MAINTENANCE_TEXT });
-    } else if (event instanceof MessageCreated) {
+      await ctx.answerOnCallback({ notification: MAINTENANCE_TEXT });
+      return;
+    }
+    if (ctx.has("message_created")) {
       // В группах молчим: ответ на каждое упоминание превращается в спам.
-      if (event.message.recipient.chatType !== ChatType.Dialog) return;
-      await event.message.answer({ text: MAINTENANCE_TEXT });
-    } else if (event instanceof BotStarted) {
-      await event.bot.sendMessageToUser({ userId: event.userId, text: MAINTENANCE_TEXT });
+      if (ctx.message.recipient.chat_type !== "dialog") return;
+      await ctx.reply(MAINTENANCE_TEXT);
+      return;
+    }
+    if (ctx.has("bot_started")) {
+      await ctx.reply(MAINTENANCE_TEXT);
     }
     // Остальные системные события игнорируем молча.
   } catch (error) {

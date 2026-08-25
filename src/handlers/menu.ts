@@ -1,39 +1,38 @@
+/** Навигация по разделам: /help, callback'и меню и разбор свободного текста. */
+import type { Bot, Context } from "@maxhub/max-bot-api";
 import { BackPayload, MenuPayload, PayloadError } from "../keyboards/callbacks.js";
 import { backKeyboard, getSection, mainMenu } from "../keyboards/menus.js";
-import type { Dispatcher } from "../max/dispatcher.js";
-/** Навигация по разделам: /help, callback'и меню и разбор свободного текста. */
-import { command } from "../max/filters.js";
-import { ChatType, type MessageCallback, type MessageCreated } from "../max/types.js";
 import { WELCOME_TEXT } from "./start.js";
 
 export const UNKNOWN_TEXT = "Не понял запрос. Выберите раздел в меню 👇";
 
-export function register(dp: Dispatcher): void {
-  dp.onMessageCreated(onHelp, command("help"));
-  dp.onMessageCallback(onCallback);
+export function register(bot: Bot): void {
+  bot.command("help", onHelp);
+  bot.on("message_callback", onCallback);
   // Catch-all: регистрируется последним, иначе перехватит команды.
-  dp.onMessageCreated(onFreeText);
+  bot.on("message_created", onFreeText);
 }
 
-async function onHelp(event: MessageCreated): Promise<void> {
+async function onHelp(ctx: Context): Promise<void> {
   const section = getSection("help");
   const text = section?.text ?? UNKNOWN_TEXT;
-  await event.message.answer({ text, attachments: [mainMenu().asMarkup()] });
+  await ctx.reply(text, { attachments: [mainMenu()] });
 }
 
 /** Единая точка обработки нажатий кнопок. */
-async function onCallback(event: MessageCallback): Promise<void> {
-  const payload = event.callback.payload ?? "";
+async function onCallback(ctx: Context): Promise<void> {
+  if (!ctx.has("message_callback")) return;
+  const payload = ctx.callback.payload ?? "";
 
   if (BackPayload.matches(payload)) {
-    await showMainMenu(event);
+    await showMainMenu(ctx);
     return;
   }
 
   if (!MenuPayload.matches(payload)) {
     // Payload из старой версии клавиатуры или подделанный.
     console.info(`Неизвестный payload callback: ${JSON.stringify(payload)}`);
-    await event.answer({ notification: "Кнопка устарела, откройте меню заново" });
+    await ctx.answerOnCallback({ notification: "Кнопка устарела, откройте меню заново" });
     return;
   }
 
@@ -43,7 +42,7 @@ async function onCallback(event: MessageCallback): Promise<void> {
   } catch (error) {
     if (error instanceof PayloadError) {
       console.warn(`Битый payload: ${error.message}`);
-      await event.answer({ notification: "Кнопка устарела, откройте меню заново" });
+      await ctx.answerOnCallback({ notification: "Кнопка устарела, откройте меню заново" });
       return;
     }
     throw error;
@@ -52,14 +51,11 @@ async function onCallback(event: MessageCallback): Promise<void> {
   const section = getSection(sectionId);
   if (!section || section.url) {
     // Раздел удалён из SECTIONS, либо это внешняя ссылка — у неё нет экрана внутри бота.
-    await event.answer({ notification: "Раздел недоступен" });
+    await ctx.answerOnCallback({ notification: "Раздел недоступен" });
     return;
   }
 
-  await event.message.answer({
-    text: `${section.title}\n\n${section.text}`,
-    attachments: [backKeyboard().asMarkup()],
-  });
+  await ctx.reply(`${section.title}\n\n${section.text}`, { attachments: [backKeyboard()] });
 }
 
 /**
@@ -68,13 +64,14 @@ async function onCallback(event: MessageCallback): Promise<void> {
  * Здесь обычно живёт поиск или разбор пользовательского ввода. В шаблоне —
  * возврат в меню.
  */
-async function onFreeText(event: MessageCreated): Promise<void> {
+async function onFreeText(ctx: Context): Promise<void> {
+  if (!ctx.has("message_created")) return;
   // В группах на каждое сообщение не отвечаем: бот превратился бы в спамера.
-  if (event.message.recipient.chatType !== ChatType.Dialog) return;
+  if (ctx.message.recipient.chat_type !== "dialog") return;
 
-  await event.message.answer({ text: UNKNOWN_TEXT, attachments: [mainMenu().asMarkup()] });
+  await ctx.reply(UNKNOWN_TEXT, { attachments: [mainMenu()] });
 }
 
-async function showMainMenu(event: MessageCallback): Promise<void> {
-  await event.message.answer({ text: WELCOME_TEXT, attachments: [mainMenu().asMarkup()] });
+async function showMainMenu(ctx: Context): Promise<void> {
+  await ctx.reply(WELCOME_TEXT, { attachments: [mainMenu()] });
 }

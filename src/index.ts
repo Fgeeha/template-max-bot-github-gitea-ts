@@ -4,45 +4,48 @@
  * Запуск: `pnpm run` (dev, без сборки) или `node dist/index.js` (после `pnpm build`).
  */
 import { createServer, type Server } from "node:http";
+import { Bot, Context } from "@maxhub/max-bot-api";
+import type { UpdateType } from "@maxhub/max-bot-api/types";
 import { getSettings, type Settings } from "./config.js";
 import { registerAll } from "./handlers/index.js";
-import { Bot } from "./max/bot.js";
-import { Dispatcher } from "./max/dispatcher.js";
-import { UpdateType } from "./max/types.js";
-import { buildTlsCa, RateLimiter } from "./runtime.js";
+import { deleteWebhookSubscription, subscribeWebhook } from "./maxWebhookSubscription.js";
+import { applyTlsCa, patchFetchForRateLimiting, RateLimiter } from "./runtime.js";
 import { BackgroundDispatcher, createWebhookListener } from "./webhook.js";
 
-// Типы апдейтов, на которые подписываемся в режиме webhook. В polling
-// getUpdates отдаёт всё подряд; здесь список нужен явный — платформа шлёт
-// только перечисленное. Добавляя хендлер на новый тип события, дополните.
-const WEBHOOK_UPDATE_TYPES = [
-  UpdateType.MessageCreated,
-  UpdateType.MessageCallback,
-  UpdateType.BotStarted,
-];
+// Типы апдейтов, на которые подписываемся в режиме webhook и запрашиваем в
+// polling. Платформа шлёт/отдаёт только перечисленное. Добавляя хендлер на
+// новый тип события, дополните список.
+const WEBHOOK_UPDATE_TYPES: UpdateType[] = ["message_created", "message_callback", "bot_started"];
 
 function buildBot(settings: Settings): Bot {
-  const bot = new Bot({
-    token: settings.maxBotToken,
-    baseUrl: settings.maxApiBaseUrl,
-    ca: buildTlsCa(settings.maxCaBundle),
-    apiRateLimiter: new RateLimiter(settings.maxApiRps),
-    messageRateLimiter: new RateLimiter(settings.maxApiMessageRps),
+  // CA и лимиты патчат globalThis.fetch — официальный клиент не даёт своих
+  // хуков (см. src/runtime.ts). Делать это нужно до первого вызова API.
+  applyTlsCa(settings.maxCaBundle);
+  patchFetchForRateLimiting(
+    new RateLimiter(settings.maxApiRps),
+    new RateLimiter(settings.maxApiMessageRps),
+  );
+
+  const bot = new Bot(settings.maxBotToken, { clientOptions: { baseUrl: settings.maxApiBaseUrl } });
+
+  // По умолчанию официальный клиент завершает процесс на любой необработанной
+  // ошибке хендлера. Здесь логируем и продолжаем — одно сломанное обновление
+  // не должно ронять весь бот (тот же принцип, что и в фоновой очереди
+  // вебхука, см. src/webhook.ts).
+  bot.catch((error, ctx) => {
+    console.error(`Необработанное исключение при обработке ${ctx.updateType}:`, error);
   });
+
   console.info(`MAX API URL: ${settings.maxApiBaseUrl}`);
   return bot;
 }
 
-function buildDispatcher(): Dispatcher {
-  const dispatcher = new Dispatcher();
-  registerAll(dispatcher);
-  return dispatcher;
-}
-
-async function registerWebhookSubscription(bot: Bot, settings: Settings): Promise<void> {
+async function registerWebhookSubscription(settings: Settings): Promise<void> {
   try {
     // Проверено в config.ts: BOT_MODE=webhook гарантирует наличие secret.
-    await bot.subscribeWebhook(
+    await subscribeWebhook(
+      settings.maxBotToken,
+      settings.maxApiBaseUrl,
       settings.webhookUrl,
       WEBHOOK_UPDATE_TYPES,
       settings.webhookSecret as string,
@@ -57,13 +60,13 @@ async function registerWebhookSubscription(bot: Bot, settings: Settings): Promis
 
 async function startWebhookServer(
   bot: Bot,
-  dispatcher: Dispatcher,
   settings: Settings,
 ): Promise<{ server: Server; background: BackgroundDispatcher }> {
-  const background = new BackgroundDispatcher(
-    (raw) => dispatcher.dispatch(bot, raw),
-    settings.webhookMaxPendingUpdates,
-  );
+  const background = new BackgroundDispatcher(async (raw) => {
+    const ctx = new Context(raw, bot.api, bot.botInfo);
+    await bot.middleware()(ctx, () => Promise.resolve(undefined));
+  }, settings.webhookMaxPendingUpdates);
+
   const server = createServer(
     createWebhookListener(background, {
       path: settings.webhookPath,
@@ -87,18 +90,30 @@ async function startWebhookServer(
     `Режим webhook: 0.0.0.0:${settings.port}${settings.webhookPath} ` +
       `(очередь апдейтов ${settings.webhookMaxPendingUpdates})`,
   );
+
+  // Нужен для ctx.myId и разбора упоминаний в command()/hears() — в polling
+  // это делает сам bot.start(). Best-effort и после старта сервера: сбой
+  // сети здесь не должен мешать серверу принимать апдейты.
+  try {
+    bot.botInfo ??= await bot.api.getMyInfo();
+  } catch (error) {
+    console.warn("Не удалось получить информацию о боте (ctx.myId будет пуст):", error);
+  }
+
   return { server, background };
 }
 
-async function runPolling(bot: Bot, dispatcher: Dispatcher): Promise<void> {
+async function runPolling(bot: Bot, settings: Settings): Promise<void> {
   try {
-    await bot.deleteWebhook();
+    await deleteWebhookSubscription(settings.maxBotToken, settings.maxApiBaseUrl);
   } catch (error) {
     // Подписки могло не быть — это нормально.
-    console.debug("deleteWebhook пропущен:", error);
+    console.debug("deleteWebhookSubscription пропущен:", error);
   }
   console.info("Режим polling");
-  await dispatcher.startPolling(bot);
+  // bot.start() блокируется до bot.stop() и сам перезапускает polling-цикл
+  // при сетевых сбоях (retry по умолчанию включён).
+  await bot.start({ allowedUpdates: WEBHOOK_UPDATE_TYPES });
 }
 
 async function main(): Promise<void> {
@@ -121,7 +136,7 @@ async function main(): Promise<void> {
   }
 
   const bot = buildBot(settings);
-  const dispatcher = buildDispatcher();
+  registerAll(bot);
 
   // Graceful shutdown: по SIGINT/SIGTERM останавливаем runner и закрываем
   // сессии, чтобы не терять апдейт «на полпути» и не оставлять соединения.
@@ -137,12 +152,12 @@ async function main(): Promise<void> {
   let pollingDone: Promise<void> | undefined;
 
   if (settings.useWebhook) {
-    ({ server, background } = await startWebhookServer(bot, dispatcher, settings));
-    await registerWebhookSubscription(bot, settings);
+    ({ server, background } = await startWebhookServer(bot, settings));
+    await registerWebhookSubscription(settings);
   } else {
     // Если polling завершится сам (успешно или с ошибкой) — выходим тоже,
     // иначе процесс висел бы живым с мёртвым ботом.
-    pollingDone = runPolling(bot, dispatcher).finally(requestStop);
+    pollingDone = runPolling(bot, settings).finally(requestStop);
   }
 
   await stopRequested;
@@ -151,7 +166,7 @@ async function main(): Promise<void> {
   if (settings.useWebhook) {
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   } else {
-    dispatcher.stopPolling();
+    bot.stop();
   }
   if (pollingDone) await pollingDone;
 
@@ -161,7 +176,8 @@ async function main(): Promise<void> {
     await background.drain(settings.webhookDrainTimeout * 1000);
   }
 
-  await bot.close();
+  // Нет отдельного bot.close(): официальный клиент использует глобальный
+  // fetch, а не собственный пул соединений — закрывать нечего.
   if (settings.databaseUrl) {
     const { disposePool } = await import("./db/pool.js");
     await disposePool();

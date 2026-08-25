@@ -24,6 +24,7 @@
     "init-project": "tsx scripts/init-project.ts"
   },
   "dependencies": {
+    "@maxhub/max-bot-api": "^0.2.5",
     "dotenv": "^17.4.2",
     "undici": "^8.10.0",
     "zod": "^4.4.3"

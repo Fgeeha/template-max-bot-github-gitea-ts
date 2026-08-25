@@ -45,6 +45,8 @@ describe("keyboards", () => {
   });
 
   it("главное меню собирается", () => {
-    expect(mainMenu().asMarkup()).toBeDefined();
+    const markup = mainMenu();
+    expect(markup.type).toBe("inline_keyboard");
+    expect(markup.payload.buttons).toHaveLength(SECTIONS.length);
   });
 });

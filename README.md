@@ -5,11 +5,16 @@ CI/CD под **GitHub Actions** и **Gitea Actions**. TypeScript-аналог ш
 [template-max-bot-github-gitea](../template-max-bot-github-gitea) — та же
 архитектура и те же решения, перенесённые на Node.js.
 
-Официального Node/TS SDK для MAX Bot API не существует, поэтому в шаблон
-включён тонкий вендоренный клиент (`src/max/`), покрывающий ровно то, что
-используют хендлеры: отправку и удаление сообщений, инлайн-клавиатуры,
-подписку на webhook и long polling. Перед продом сверьте пути эндпоинтов с
-актуальной документацией: https://dev.max.ru/.
+Работа с платформой построена на официальном клиенте
+[`@maxhub/max-bot-api`](https://github.com/max-messenger/max-bot-api-client-ts)
+(Telegraf-подобный API: `bot.command()`/`bot.hears()`/`bot.action()`,
+`ctx.reply()`, `Keyboard.inlineKeyboard()`). Он поддерживает только long
+polling — webhook в нём не реализован, поэтому фоновая очередь приёма
+апдейтов (`src/webhook.ts`) и подписка/отписка от webhook
+(`src/maxWebhookSubscription.ts`, единственный best-effort фрагмент — путь
+`/subscriptions` нигде не покрыт официальным клиентом) остались собственными.
+Троттлинг, ретраи на 429 и кастомный CA патчат `globalThis.fetch`
+(`src/runtime.ts`) — клиент не даёт для этого своих хуков.
 
 Шаблон закрывает то, что в каждом новом боте приходится писать заново:
 ограничение частоты запросов к API, корректное завершение процесса, разбор
@@ -59,9 +64,10 @@ CI/CD под **GitHub Actions** и **Gitea Actions**. TypeScript-аналог ш
 | Скрипт инициализации нового проекта | ✅ |
 | Тесты (36 шт.) | ✅ |
 
-**Стек:** Node.js 24, TypeScript 7, undici (HTTP), zod (конфигурация), pnpm,
-Biome (линт + формат), vitest, Docker. Слой БД — pg + node-pg-migrate
-(опционально). Метрики — prom-client (опционально).
+**Стек:** Node.js 24, TypeScript 7, [`@maxhub/max-bot-api`](https://github.com/max-messenger/max-bot-api-client-ts)
+(официальный клиент MAX), zod (конфигурация), pnpm, Biome (линт + формат),
+vitest, Docker. Слой БД — pg + node-pg-migrate (опционально). Метрики —
+prom-client (опционально).
 
 ---
 
@@ -112,16 +118,10 @@ pnpm run init-project -- --name support-max-bot --description "Бот техпо
 src/
 ├── index.ts              # точка входа: выбор режима, сборка бота, graceful shutdown
 ├── config.ts              # все настройки, единый источник правды (zod)
-├── runtime.ts              # лимиты, ретраи на 429, CA-bundle
+├── runtime.ts              # патч globalThis.fetch: лимиты, ретраи на 429, CA-bundle
+├── maxWebhookSubscription.ts # подписка/отписка от webhook (нет в официальном клиенте)
 ├── webhook.ts               # приём апдейтов без удержания HTTP-соединения
 ├── metrics.ts                # Prometheus (опционально)
-├── max/                        # вендоренный клиент MAX Bot API
-│   ├── bot.ts                    #   HTTP-клиент (undici): messages, subscriptions, updates
-│   ├── dispatcher.ts               #   регистрация middleware/хендлеров, маршрутизация
-│   ├── types.ts                      #   события (MessageCreated/MessageCallback/BotStarted)
-│   ├── filters.ts                      #   command/commandStart
-│   ├── keyboard.ts                       #   InlineKeyboardBuilder
-│   └── errors.ts                           #   MaxApiError
 ├── handlers/                 # обработчики событий
 │   ├── index.ts                #   регистрация — порядок важен, см. комментарий
 │   ├── start.ts                  #   /start и bot_started
@@ -263,21 +263,19 @@ PORT=8081
 
 ```typescript
 // src/handlers/myFeature.ts
-import { command } from "../max/filters.js";
-import type { Dispatcher } from "../max/dispatcher.js";
-import type { MessageCreated } from "../max/types.js";
+import type { Bot, Context } from "@maxhub/max-bot-api";
 
-export function register(dp: Dispatcher): void {
-  dp.onMessageCreated(onMyCommand, command("mycommand"));
+export function register(bot: Bot): void {
+  bot.command("mycommand", onMyCommand);
 }
 
-async function onMyCommand(event: MessageCreated): Promise<void> {
-  await event.message.answer({ text: "Ответ" });
+async function onMyCommand(ctx: Context): Promise<void> {
+  await ctx.reply("Ответ");
 }
 ```
 
-Затем добавить `myFeature.register(dp)` в `handlers/index.ts` — **до**
-`menu.register(dp)`, иначе catch-all на свободный текст перехватит команду
+Затем добавить `myFeature.register(bot)` в `handlers/index.ts` — **до**
+`menu.register(bot)`, иначе catch-all на свободный текст перехватит команду
 раньше.
 
 ### Новый тип кнопки
@@ -524,16 +522,25 @@ it("разбирает список admin id", () => {
 Короткий список мест, где TypeScript-порт устроен иначе, чем оригинал, и
 почему.
 
-**Свой HTTP-клиент вместо `maxapi`.** Официального Node/TS SDK для MAX не
-существует. `src/max/` — тонкий клиент на undici, повторяющий поверхность API
-использованных методов (`sendMessage`, `subscribeWebhook`, `getUpdates` и
-т.д.). Пути эндпоинтов — лучшее приближение к официальному API; при
-расхождении с документацией правки локализованы в `src/max/bot.ts`.
+**Официальный клиент вместо `maxapi`.** Python-версия оборачивает библиотеку
+`maxapi`. Здесь используется официальный `@maxhub/max-bot-api` — тот же
+принцип (сторонний/официальный клиент под собственной инфраструктурой лимитов
+и очереди), но с настоящим, поддерживаемым SDK вместо стороннего.
 
-**Лимиты и ретраи — композиция, а не monkey-patch.** Python-версия патчит
-методы внешней библиотеки `maxapi`. Здесь клиент собственный, поэтому
-`runtime.ts::withRateLimitAndRetry` — обычная функция-обёртка, вызываемая
-из `Bot.call()`.
+**Webhook собран поверх официального клиента, а не входит в него.**
+`@maxhub/max-bot-api` поддерживает только long polling. Для webhook шаблон
+конструирует `Context` из сырого JSON и прогоняет её через
+`bot.middleware()` — так вся маршрутизация (`bot.command()`/`bot.action()`/
+`bot.on()`, зарегистрированные в `handlers/`) работает одинаково в обоих
+режимах. Подписка/отписка от webhook (`maxWebhookSubscription.ts`) написана
+вручную и промаркирована как best-effort: это единственный путь API, который
+официальный клиент не покрывает и не подтверждает.
+
+**Лимиты и ретраи патчат `globalThis.fetch`, а не monkey-patch конкретного
+класса.** Python-версия патчит `BaseConnection.request` библиотеки `maxapi`.
+Официальный клиент MAX для TS не даёт ни хуков, ни доступа к своему
+HTTP-слою, поэтому единственная точка перехвата — глобальный `fetch`,
+который он вызывает напрямую (`runtime.ts::patchFetchForRateLimiting`).
 
 **Webhook-сервер — `node:http`, без фреймворка.** Вместо FastAPI + uvicorn
 здесь используется встроенный HTTP-сервер Node: обработчиков всего два

@@ -1,5 +1,5 @@
 /** Регистрация middleware и хендлеров в диспетчере. */
-import type { Dispatcher } from "../max/dispatcher.js";
+import type { Bot } from "@maxhub/max-bot-api";
 import { maintenanceMiddleware } from "../middlewares/maintenance.js";
 import { ThrottlingMiddleware } from "../middlewares/throttling.js";
 import * as admin from "./admin.js";
@@ -15,11 +15,11 @@ import * as start from "./start.js";
  *   2. хендлеры команд и callback'ов — со своими фильтрами;
  *   3. catch-all для свободного текста — последним, иначе перехватит всё.
  */
-export function registerAll(dp: Dispatcher): void {
-  dp.registerOuterMiddleware(maintenanceMiddleware);
-  dp.registerOuterMiddleware(new ThrottlingMiddleware().handle);
+export function registerAll(bot: Bot): void {
+  bot.use(maintenanceMiddleware);
+  bot.use(new ThrottlingMiddleware().handle);
 
-  admin.register(dp);
-  start.register(dp);
-  menu.register(dp);
+  admin.register(bot);
+  start.register(bot);
+  menu.register(bot);
 }

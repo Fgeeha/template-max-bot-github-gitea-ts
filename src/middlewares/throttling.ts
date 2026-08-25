@@ -5,8 +5,7 @@
  * способен выдать десятки событий в секунду, каждое из которых потянет вызовы
  * MAX API и упрётся в антиспам-лимит уже на стороне платформы.
  */
-import type { Middleware } from "../max/dispatcher.js";
-import { MessageCallback, type UpdateEvent } from "../max/types.js";
+import type { Context, MiddlewareFn, NextFn } from "@maxhub/max-bot-api";
 
 // Сколько записей о пользователях держим в памяти. При превышении чистим
 // протухшие — иначе Map росла бы неограниченно на публичном боте.
@@ -27,8 +26,8 @@ export class ThrottlingMiddleware {
     this.rateMs = rateSeconds * 1000;
   }
 
-  readonly handle: Middleware = async (next, event) => {
-    const userId = event.getIds()?.userId;
+  readonly handle: MiddlewareFn<Context> = async (ctx, next: NextFn) => {
+    const userId = ctx.user?.user_id;
     if (userId === undefined) {
       await next();
       return;
@@ -37,7 +36,7 @@ export class ThrottlingMiddleware {
     const now = Date.now();
     const last = this.lastSeen.get(userId);
     if (last !== undefined && now - last < this.rateMs) {
-      await reject(event);
+      await reject(ctx);
       return;
     }
 
@@ -68,10 +67,10 @@ export class ThrottlingMiddleware {
  * ожидания. Сообщения игнорируем молча: предупреждение на каждое сообщение
  * само по себе стало бы флудом.
  */
-async function reject(event: UpdateEvent): Promise<void> {
-  if (!(event instanceof MessageCallback)) return;
+async function reject(ctx: Context): Promise<void> {
+  if (!ctx.has("message_callback")) return;
   try {
-    await event.answer({ notification: "Слишком часто, подождите секунду" });
+    await ctx.answerOnCallback({ notification: "Слишком часто, подождите секунду" });
   } catch (error) {
     console.debug("throttling: не удалось ответить на callback:", error);
   }

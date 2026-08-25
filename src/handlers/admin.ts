@@ -5,39 +5,35 @@
  * не существует. Это осознанный выбор: сообщение «недостаточно прав» само по
  * себе раскрывает наличие скрытой функциональности.
  */
+import type { Bot, Context } from "@maxhub/max-bot-api";
 import { getSettings } from "../config.js";
-import type { Dispatcher } from "../max/dispatcher.js";
-import { command } from "../max/filters.js";
-import type { MessageCreated } from "../max/types.js";
 
 // Запас от лимита платформы (~4096 символов) — длинное сообщение режем сами.
 export const MAX_MESSAGE_LEN = 3800;
 
-function adminOnly(
-  handler: (event: MessageCreated) => Promise<void>,
-): (event: MessageCreated) => Promise<void> {
-  return async (event) => {
-    const userId = event.getIds().userId;
+function adminOnly(handler: (ctx: Context) => Promise<void>): (ctx: Context) => Promise<void> {
+  return async (ctx) => {
+    const userId = ctx.user?.user_id;
     if (userId === undefined || !getSettings().adminIdsSet.has(userId)) return;
-    await handler(event);
+    await handler(ctx);
   };
 }
 
-export function register(dp: Dispatcher): void {
-  dp.onMessageCreated(adminOnly(onVersion), command("v"));
-  dp.onMessageCreated(adminOnly(onStatus), command("status"));
+export function register(bot: Bot): void {
+  bot.command("v", adminOnly(onVersion));
+  bot.command("status", adminOnly(onStatus));
 }
 
 /** Тег текущей сборки — чтобы убедиться, что на проде именно та версия. */
-async function onVersion(event: MessageCreated): Promise<void> {
+async function onVersion(ctx: Context): Promise<void> {
   const settings = getSettings();
   const text = settings.buildTag ? `Версия: \`${settings.buildTag}\`` : "Тег сборки не задан.";
-  await event.message.answer({ text });
+  await ctx.reply(text);
 }
 
-async function onStatus(event: MessageCreated): Promise<void> {
+async function onStatus(ctx: Context): Promise<void> {
   for (const chunk of splitMessage(buildStatusText())) {
-    await event.message.answer({ text: chunk });
+    await ctx.reply(chunk);
   }
 }
 
