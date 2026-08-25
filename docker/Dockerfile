@@ -60,10 +60,12 @@ WORKDIR /app
 COPY certs/ /usr/local/share/ca-certificates/extra/
 RUN update-ca-certificates || true
 
-RUN groupadd --system --gid ${GID} appuser \
-    && useradd --system --uid ${UID} --gid appuser --no-create-home appuser \
-    && mkdir -p /app/logs \
-    && chown appuser:appuser /app/logs
+# Без groupadd/useradd: базовый образ Node уже содержит пользователя "node"
+# на 1000:1000, и на этом UID/GID (дефолт для local/CI) create будет падать
+# на "already exists". USER ниже принимает числовой UID:GID напрямую — записи
+# в /etc/passwd не нужна, а chown работает по числу так же, как по имени.
+RUN mkdir -p /app/logs \
+    && chown ${UID}:${GID} /app/logs
 
 RUN corepack enable
 
@@ -89,12 +91,16 @@ CMD ["sh", "-c", "pnpm lint && pnpm test"]
 # ---------------------------------------------------------------------------
 FROM base AS runtime
 ARG BUILD_TAG=""
+# ARG-области не наследуются между стадиями — повторяем те же дефолты, что и
+# в base, чтобы USER ниже увидел то же значение, которым выше чистили /app/logs.
+ARG UID=10001
+ARG GID=10001
 ENV BUILD_TAG=${BUILD_TAG} \
     NODE_ENV=production
 # Убирает devDependencies (typescript, vitest, biome, tsx) — рантайму нужен
 # только dist/ и прод-зависимости.
 RUN pnpm prune --prod
-USER appuser
+USER ${UID}:${GID}
 # Порт слушается только при BOT_MODE=webhook; в polling EXPOSE — просто
 # декларация для оркестратора.
 EXPOSE 8081
