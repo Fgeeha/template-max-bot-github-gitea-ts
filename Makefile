@@ -24,7 +24,7 @@ GITEA_URL := https://gitea.volganet.ru
 
 .PHONY: help init install run build lint format test check \
         up-local up-local-db down-local restart-local logs \
-        up-prod down-prod migrate migration dump restore clean
+        up-prod down-prod migrate migration dump restore docs clean
 
 help: ## Показать список целей
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -38,7 +38,7 @@ init: ## Создать новый проект из шаблона (интер�
 install: ## Установить зависимости
 	pnpm install
 
-run: ## Запустить бота локально
+run: migrate ## Запустить бота локально (база — make up-local-db)
 	pnpm exec tsx src/index.ts
 
 build: ## Собрать TypeScript в dist/
@@ -61,14 +61,14 @@ check: lint test build ## Полная проверка перед коммит�
 # берёт дефолт. env_file: внутри compose — другой механизм, он передаёт
 # переменные в контейнер и подстановку в YAML не заменяет.
 
-up-local: ## Поднять бота локально в Docker
+up-local: ## Поднять бота и Postgres локально в Docker
 	$(DC_LOCAL) up -d --build
 
-up-local-db: ## Поднять бота вместе с Postgres (профиль db)
-	$(DC_LOCAL) --profile db up -d --build
+up-local-db: ## Поднять только Postgres (для make run с хоста)
+	$(DC_LOCAL) up -d db
 
 down-local: ## Остановить локальный стек
-	$(DC_LOCAL) --profile db down
+	$(DC_LOCAL) down
 
 restart-local: ## Пересобрать и перезапустить локальный стек
 	$(DC_LOCAL) down
@@ -83,13 +83,13 @@ up-prod: ## Поднять прод-конфигурацию
 down-prod: ## Остановить прод-конфигурацию
 	$(DC_PROD) down
 
-# --- База данных (только при DATABASE_URL) -----------------------------------
+# --- База данных -------------------------------------------------------------
 
-migrate: ## Применить миграции
+migrate: ## Применить миграции к DATABASE_URL из .env
 	set -a; . ./.env; set +a; pnpm migrate
 
-migration: ## Создать ревизию: make migration m="добавил users"
-	@test -n "$(m)" || { echo "Укажите описание: make migration m=\"добавил users\""; exit 1; }
+migration: ## Создать ревизию: make migration m="добавил таблицу"
+	@test -n "$(m)" || { echo "Укажите описание: make migration m=\"добавил таблицу\""; exit 1; }
 	set -a; . ./.env; set +a; pnpm migration $(m)
 
 dump: ## Дамп локальной БД: make dump [f=backup.dump]
@@ -102,6 +102,9 @@ restore: ## Восстановить БД из дампа: make restore f=backup
 		'pg_restore --clean --if-exists --no-owner -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $(f)
 
 # --- Прочее -----------------------------------------------------------------
+
+docs: ## Собрать HTML-документацию в docs/html (открыть docs/html/index.html)
+	pnpm run docs
 
 clean: ## Удалить кэши и временные артефакты
 	rm -rf dist coverage .vitest-cache

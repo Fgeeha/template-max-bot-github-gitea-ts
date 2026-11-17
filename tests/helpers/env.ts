@@ -21,6 +21,9 @@ const ENV_KEYS = [
   "PROD",
   "ADMIN_IDS",
   "DATABASE_URL",
+  "STATS_ENABLED",
+  "STATS_SALT",
+  "DISPLAY_UTC_OFFSET",
   "METRICS_ENABLED",
   "METRICS_ADDR",
   "BUILD_TAG",
@@ -30,6 +33,7 @@ const BASE_ENV: Record<string, string> = {
   MAX_BOT_TOKEN: "test-token",
   PROD: "true",
   ADMIN_IDS: "",
+  DATABASE_URL: "postgresql://bot:bot@127.0.0.1:5433/bot",
 };
 
 /** Полностью очищает известные переменные окружения бота и задаёт их заново из overrides. */

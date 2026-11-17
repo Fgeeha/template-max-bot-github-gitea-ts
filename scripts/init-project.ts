@@ -28,6 +28,7 @@ const TARGET_FILES = [
   "docker/docker-compose.prod.yml",
   ".gitea/workflows/pipeline.yml",
   "README.md",
+  "scripts/build-docs.ts",
 ];
 
 const SLUG_PATTERN = /^[a-z][a-z0-9-]{1,48}[a-z0-9]$/;

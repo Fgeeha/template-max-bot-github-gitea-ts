@@ -38,6 +38,6 @@ describe("admin handler", () => {
     const text = buildStatusText();
     expect(text).not.toContain("super-secret-token");
     expect(text).not.toContain("secret-password");
-    expect(text).toContain("подключена");
+    expect(text).toContain("Статистика: включена");
   });
 });

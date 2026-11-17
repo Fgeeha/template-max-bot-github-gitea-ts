@@ -31,7 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make install                    # pnpm install
-make run                        # запуск локально (polling), pnpm exec tsx src/index.ts
+make run                        # миграции + запуск локально (polling), база — make up-local-db
 make build                      # tsc -p tsconfig.json → dist/
 make lint                       # biome check src tests scripts
 make format                     # biome check --write (форматирование + импорты)
@@ -46,17 +46,20 @@ pnpm exec vitest run tests/throttling.test.ts
 pnpm exec vitest run -t "разбирает список admin id"
 ```
 
-БД (только если задан `DATABASE_URL`):
+БД обязательна (`DATABASE_URL`, разделы меню живут в Postgres):
 
 ```bash
-make up-local-db                          # Postgres в Docker (профиль db)
-make migration m="добавил таблицу users"  # новая ревизия node-pg-migrate
+make up-local-db                          # только Postgres в Docker на 127.0.0.1:5433
+make migration m="добавил таблицу"        # новая ревизия node-pg-migrate
 make migrate                              # применить (sourced из .env)
 ```
 
-Docker: `make up-local` / `make up-local-db` / `down-local` / `logs`. Все compose-вызовы
-обязаны идти через `--env-file .env` (Makefile это делает сам) — без флага Compose ищет
-`.env` в `docker/` и подстановка `${PORT}` молча берёт дефолт.
+Docker: `make up-local` (бот + Postgres, миграции при старте контейнера) / `down-local` / `logs`.
+Все compose-вызовы обязаны идти через `--env-file .env` (Makefile это делает сам) — без
+флага Compose ищет `.env` в `docker/` и подстановка `${PORT}` молча берёт дефолт.
+
+`make docs` — HTML-документация из `README.md` и `docs/*.md` в `docs/html/`
+(`scripts/build-docs.ts`).
 
 `make help` — полный список целей прямо из Makefile.
 
@@ -94,14 +97,21 @@ Docker: `make up-local` / `make up-local-db` / `down-local` / `logs`. Все com
 `menu.register()` — последним, потому что у него catch-all на свободный текст, который
 иначе перехватит команды, зарегистрированные после него.
 
+Внутри хендлеров: `admin.register` → `editor.register` (админка: `/admin`,
+`bot.action(/^a:/)`, middleware ожидаемого ввода — пропускает команды через `next()`) →
+`start.register` → `menu.register`. Хендлеры регистрирует `registerHandlers()` — его же
+вызывают сценарные тесты, без middleware.
+
 **Уровни доступа** (три независимых слоя, не путать друг с другом):
-1. `middlewares/maintenance.ts` — при `PROD=false` пропускает только `ADMIN_IDS`,
-   в группах при блокировке молчит.
+1. `middlewares/maintenance.ts` — при `PROD=false` пропускает только владельцев
+   (`ADMIN_IDS`; администраторов из `staff` — нет), в группах при блокировке молчит.
 2. `middlewares/throttling.ts` — не чаще одного события на пользователя в 0.5с,
    состояние в памяти процесса (при нескольких репликах — приблизительно, для честного
    лимита нужен Redis).
-3. `adminOnly` в `handlers/admin.ts` — служебные команды не отвечают неадминам вовсе
-   (само наличие ответа «недостаточно прав» раскрывало бы скрытую функциональность).
+3. Роли в `handlers/admin.ts`: владелец — `ADMIN_IDS` (всё, включая управление
+   администраторами), администратор — таблица `staff`, читается из БД на каждом событии.
+   `adminOnly` — неадминам `/admin`, `/v`, `/status` не отвечают вовсе (само наличие ответа
+   «недостаточно прав» раскрывало бы скрытую функциональность).
 
 **Конфигурация** — единый источник правды в `src/config.ts` (zod-схема + ручные
 проверки), читается из окружения при старте, а не лениво при первом обращении: бот
@@ -109,16 +119,30 @@ Docker: `make up-local` / `make up-local-db` / `down-local` / `logs`. Все com
 комментариями — `.env.example`. `src/config.ts` не грузит `.env`, когда выставлена
 `VITEST` (ставится vitest автоматически) — тесты герметичны и в сеть не ходят.
 
-**`src/db/` и метрики (`src/metrics.ts`) опциональны** — весь бот работает без БД.
-`pg`, `node-pg-migrate`, `prom-client` объявлены в `optionalDependencies` и импортируются
-лениво (`await import("pg")`), поэтому их можно удалить из `package.json` целиком вместе
-с `src/db/`, если состояние и метрики не нужны. Весь SQL живёт в `src/db/repositories/`
-— хендлеры к пулу (`src/db/pool.ts`) напрямую не обращаются.
+**БД обязательна, метрики — нет.** `pg` и `node-pg-migrate` — обычные `dependencies`
+(миграции применяются при старте контейнера, см. `CMD` в `docker/Dockerfile`),
+`prom-client` — `optionalDependencies`, импортируется лениво. Весь SQL живёт в
+`src/db/repositories/` — хендлеры работают только через `withTransaction()` из
+`src/db/pool.ts`. Ответы в MAX отправляются после commit, а не внутри транзакции.
+Начальная миграция — чистый SQL через `pgm.sql()` (схема + демо-разделы): тесты
+прогоняют её на PGlite без раннера.
 
-**Меню как данные, не код**: разделы описаны массивом `SECTIONS` в
-`src/keyboards/menus.ts`; типизированные payload'ы кнопок — в `keyboards/callbacks.ts`
-(по образцу `MenuPayload`), обрабатываются в `handlers/menu.ts::onCallback`. Тест
-проверяет, что каждая кнопка ведёт в существующий раздел.
+**Меню — дерево в БД, правится в админке.** Таблица `sections` (корень `parent_id IS NULL`
+— приветствие на `/start`), экран админки — `handlers/screens.ts`, действия над разделом —
+`handlers/editor.ts`, инструменты главного экрана (администраторы, статистика, JSON-файл,
+журнал) — `handlers/tools.ts`, проверка ввода и файла импорта — `handlers/inputs.ts`.
+Payload'ы — `SectionPayload` (`s:<id>`) и `AdminPayload` (`a:<action>:<target>`) в
+`keyboards/callbacks.ts`. Ожидание ввода (`handlers/pending.ts`) — в памяти процесса.
+Длины (64 на кнопку, 4000 на текст) считаются в символах Unicode (`charLength`), не в
+`String.length`. Формат файла разделов (`max-bot-sections` v1) общий с Python-версией.
+Пользовательская навигация (`handlers/menu.ts::showInPlace`) правит сообщение с кнопкой;
+при 4xx — подтверждение нажатия + новое сообщение, при 5xx — ничего (правка могла
+пройти), отклонённая картинка — повтор без неё.
+
+**Тесты.** Сценарные (`tests/editorFlow`, `editorImages`, `tools`) гоняют апдейты через
+настоящую цепочку `registerHandlers()` с `FakeApi` из `tests/helpers/bot.ts`; БД —
+PGlite через `vi.mock("../src/db/pool.js", …)` из `tests/helpers/db.ts`
+(`beforeEach(resetDb)`; `resetDb(true)` — с демо-разделами).
 
 **CI/CD.** GitHub Actions (`.github/workflows/ci.yml`): lint → test → build → образ в
 GHCR. Gitea Actions — **один файл** `.gitea/workflows/pipeline.yml` на весь цикл
@@ -134,9 +158,10 @@ workflow-файл с теми же триггерами — Gitea прогоня
 собирает с публичными источниками.
 
 **Разница с Python-версией шаблона** (`../template-max-bot-github-gitea`) — та же
-архитектура, но: официальный SDK вместо самописной обёртки `maxapi`; лимиты патчат
+архитектура и та же админка, но: официальный SDK вместо `maxapi`; лимиты патчат
 `globalThis.fetch` вместо конкретного класса; webhook-сервер на голом `node:http` вместо
-FastAPI; `optionalDependencies` вместо `extras`; `drain()` не может отменить фоновые
+FastAPI; SQL через `pg` + node-pg-migrate вместо SQLAlchemy + Alembic, тесты на PGlite
+вместо SQLite; `optionalDependencies` вместо `extras`; `drain()` не может отменить фоновые
 задачи. Подробности — README, раздел «Отличия от Python-версии».
 
 Соглашение по размеру файлов: до 400 строк, при превышении — делить на модули.

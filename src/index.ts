@@ -7,6 +7,7 @@ import { createServer, type Server } from "node:http";
 import { Bot, Context } from "@maxhub/max-bot-api";
 import type { UpdateType } from "@maxhub/max-bot-api/types";
 import { getSettings, type Settings } from "./config.js";
+import { disposePool } from "./db/pool.js";
 import { registerAll } from "./handlers/index.js";
 import { deleteWebhookSubscription, subscribeWebhook } from "./maxWebhookSubscription.js";
 import { applyTlsCa, patchFetchForRateLimiting, RateLimiter } from "./runtime.js";
@@ -120,7 +121,7 @@ async function main(): Promise<void> {
   const settings = getSettings();
   console.info(
     `Старт: BOT_MODE=${settings.botMode} PROD=${settings.prod} ` +
-      `DB=${settings.databaseUrl ? "on" : "off"} METRICS=${settings.metricsEnabled ? "on" : "off"} ` +
+      `STATS=${settings.statsEnabled ? "on" : "off"} METRICS=${settings.metricsEnabled ? "on" : "off"} ` +
       `BUILD_TAG=${settings.buildTag || "-"}`,
   );
   if (settings.isMaintenance) {
@@ -178,10 +179,7 @@ async function main(): Promise<void> {
 
   // Нет отдельного bot.close(): официальный клиент использует глобальный
   // fetch, а не собственный пул соединений — закрывать нечего.
-  if (settings.databaseUrl) {
-    const { disposePool } = await import("./db/pool.js");
-    await disposePool();
-  }
+  await disposePool();
   console.info("Остановлено");
 }
 

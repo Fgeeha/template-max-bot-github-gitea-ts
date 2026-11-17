@@ -43,6 +43,20 @@ describe("config", () => {
     expect(settings.webhookUrl).toBe("https://bot.example.ru/hook");
   });
 
+  it("без DATABASE_URL бот не стартует — разделы живут в БД", () => {
+    expect(() => withEnv({ DATABASE_URL: "" })).toThrow(/DATABASE_URL/);
+  });
+
+  it("DSN не Postgres отклоняется", () => {
+    expect(() => withEnv({ DATABASE_URL: "mysql://bot:bot@db/bot" })).toThrow(/DATABASE_URL/);
+  });
+
+  it("статистика включена по умолчанию, смещение времени — МСК", () => {
+    const settings = withEnv();
+    expect(settings.statsEnabled).toBe(true);
+    expect(settings.displayUtcOffset).toBe(3);
+  });
+
   it("принимает обычный Postgres DSN", () => {
     const settings = withEnv({ DATABASE_URL: "postgresql://bot:bot@db:5432/bot" });
     expect(settings.databaseUrl).toBeTruthy();

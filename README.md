@@ -19,7 +19,9 @@ polling — webhook в нём не реализован, поэтому фоно
 Шаблон закрывает то, что в каждом новом боте приходится писать заново:
 ограничение частоты запросов к API, корректное завершение процесса, разбор
 конфигурации с проверками, режимы polling/webhook, сборка образа и деплой с
-откатом.
+откатом. Из коробки это бот-визитка: дерево разделов меню хранится в Postgres
+и правится прямо в MAX командой `/admin` — без правки кода и передеплоя.
+Работа с админкой описана в [`docs/admin-guide.md`](docs/admin-guide.md).
 
 ---
 
@@ -39,6 +41,7 @@ polling — webhook в нём не реализован, поэтому фоно
 - [Docker](#docker)
 - [CI/CD](#cicd)
 - [Закрытый контур](#закрытый-контур)
+- [Документация](#документация)
 - [Тесты](#тесты)
 - [Отличия от Python-версии](#отличия-от-python-версии)
 
@@ -52,22 +55,27 @@ polling — webhook в нём не реализован, поэтому фоно
 | Ограничение частоты запросов к MAX API + ретраи на 429 | ✅ |
 | Отдельный антиспам-лимит на отправку сообщений | ✅ |
 | Корректное завершение по SIGINT/SIGTERM | ✅ |
-| Maintenance-режим (бот виден только администраторам) | ✅ |
+| Maintenance-режим (бот виден только владельцам) | ✅ |
 | Ограничение частоты входящих событий по пользователю | ✅ |
-| Инлайн-меню с типизированными payload'ами | ✅ |
-| Команды `/start`, `/help`, `/v`, `/status` | ✅ |
-| Postgres + pg + node-pg-migrate | опционально (`DATABASE_URL`) |
+| Дерево разделов меню в БД: текст, картинка, ссылка, порядок | ✅ |
+| Админка в MAX (`/admin`): правка разделов, предпросмотр, удаление с подтверждением | ✅ |
+| Владельцы (`ADMIN_IDS`) и администраторы, добавленные в админке | ✅ |
+| Анонимная статистика открытий разделов (HMAC вместо user_id) | ✅ |
+| Выгрузка и загрузка разделов JSON-файлом, журнал изменений | ✅ |
+| Команды `/start`, `/id`, `/admin`, `/v`, `/status` | ✅ |
+| Postgres + pg + node-pg-migrate | ✅ обязательно |
 | Prometheus-метрики | опционально (`METRICS_ENABLED`) |
 | Подключение своего CA (УЦ Минцифры РФ) | ✅ |
 | CI для GitHub: линт, тесты, образ в GHCR | ✅ |
 | CI/CD для Gitea: линт, тесты, образ в Harbor, деплой по SSH, откат | ✅ |
 | Скрипт инициализации нового проекта | ✅ |
-| Тесты (36 шт.) | ✅ |
+| HTML-документация из Markdown (`make docs`) | ✅ |
+| Тесты (142 шт., Postgres в процессе через PGlite) | ✅ |
 
 **Стек:** Node.js 24, TypeScript 7, [`@maxhub/max-bot-api`](https://github.com/max-messenger/max-bot-api-client-ts)
 (официальный клиент MAX), zod (конфигурация), pnpm, Biome (линт + формат),
-vitest, Docker. Слой БД — pg + node-pg-migrate (опционально). Метрики —
-prom-client (опционально).
+vitest, Docker. БД — Postgres, pg + node-pg-migrate. Метрики — prom-client
+(опционально).
 
 ---
 
@@ -76,11 +84,15 @@ prom-client (опционально).
 ```bash
 cp .env.example .env          # задать MAX_BOT_TOKEN и ADMIN_IDS
 make install                  # pnpm install
-make run                      # запуск в режиме polling
+make up-local-db              # Postgres в Docker на 127.0.0.1:5433
+make run                      # миграции + запуск в режиме polling
 ```
 
-Токен бота выдаёт `@masterbot` в мессенджере MAX. Свой `user_id` можно узнать
-у `@userinfobot`.
+Или всё в Docker одной командой: `make up-local` (бот и Postgres, миграции
+применяются при старте контейнера).
+
+Токен бота выдаёт `@masterbot` в мессенджере MAX. Свой `user_id` бот покажет
+по команде `/id`. Дальше — `/admin` в личке с ботом.
 
 По умолчанию `PROD=false` — бот отвечает только тем, чьи id перечислены в
 `ADMIN_IDS`. Это защита от преждевременного выхода к пользователям: пока бот
@@ -107,8 +119,8 @@ make init
 pnpm run init-project -- --name support-max-bot --description "Бот техподдержки"
 ```
 
-После инициализации остаётся заменить разделы меню в
-`src/keyboards/menus.ts` и текст приветствия в `src/handlers/start.ts`.
+После инициализации разделы меню и приветствие правятся в админке (`/admin`),
+стартовое наполнение — в миграции `migrations/1763294400000_initial.js`.
 
 ---
 
@@ -123,27 +135,33 @@ src/
 ├── webhook.ts               # приём апдейтов без удержания HTTP-соединения
 ├── metrics.ts                # Prometheus (опционально)
 ├── handlers/                 # обработчики событий
-│   ├── index.ts                #   регистрация — порядок важен, см. комментарий
-│   ├── start.ts                  #   /start и bot_started
-│   ├── menu.ts                     #   /help, callback'и, свободный текст
-│   └── admin.ts                      #   /v, /status — только для ADMIN_IDS
+│   ├── index.ts              #   регистрация — порядок важен, см. комментарий
+│   ├── start.ts              #   /start, /id и bot_started
+│   ├── menu.ts               #   навигация по разделам, свободный текст
+│   ├── admin.ts              #   права (владелец/администратор), /v, /status
+│   ├── editor.ts             #   админка разделов: /admin, кнопки, ввод
+│   ├── tools.ts              #   администраторы, статистика, файл, журнал
+│   ├── screens.ts            #   экраны админки и строки журнала
+│   ├── inputs.ts             #   проверка ввода и файла импорта
+│   └── pending.ts            #   кто какой ввод должен прислать
 ├── keyboards/
-│   ├── callbacks.ts           #   типизированные payload'ы кнопок
-│   └── menus.ts                 #   разделы меню (данные, а не код)
+│   ├── callbacks.ts          #   типизированные payload'ы кнопок
+│   └── menus.ts              #   клавиатуры из дерева разделов
 ├── middlewares/
-│   ├── maintenance.ts         #   гейт доступа
-│   └── throttling.ts            #   лимит событий на пользователя
-└── db/                    # опционально, только при DATABASE_URL
-    ├── pool.ts              #   пул соединений pg
-    ├── models.ts              #   типы строк
-    └── repositories/            #   весь SQL живёт здесь
+│   ├── maintenance.ts        #   гейт доступа
+│   └── throttling.ts         #   лимит событий на пользователя
+└── db/
+    ├── pool.ts               #   пул соединений pg, withTransaction()
+    ├── models.ts             #   типы строк
+    └── repositories/         #   весь SQL живёт здесь
 
 docker/                  # Dockerfile + compose для local и prod
-migrations/              # ревизии node-pg-migrate
+migrations/              # ревизии node-pg-migrate (схема + демо-разделы)
+docs/                    # руководство администратора; docs/html — сборка make docs
 .github/workflows/       # CI для GitHub
 .gitea/workflows/        # CI + CD для Gitea (единый файл, см. пояснение ниже)
 tests/                   # vitest
-scripts/                 # вспомогательные скрипты
+scripts/                 # init-project.ts, build-docs.ts
 certs/                   # дополнительные корневые сертификаты (не коммитятся)
 ```
 
@@ -161,8 +179,8 @@ certs/                   # дополнительные корневые сер�
 |---|---|---|
 | `MAX_BOT_TOKEN` | — | **Обязательна.** Токен бота |
 | `BOT_MODE` | `polling` | `polling` или `webhook` |
-| `PROD` | `false` | `false` — только администраторы, `true` — все |
-| `ADMIN_IDS` | пусто | user_id через запятую |
+| `PROD` | `false` | `false` — только владельцы, `true` — все |
+| `ADMIN_IDS` | пусто | Владельцы бота, user_id через запятую |
 | `LOG_LEVEL` | `info` | debug/info/warning/error |
 | `PORT` | `8081` | Порт webhook-сервера |
 | `WEBHOOK_HOST` | — | Обязательна при `BOT_MODE=webhook` |
@@ -170,12 +188,17 @@ certs/                   # дополнительные корневые сер�
 | `MAX_API_RPS` | `25` | Общий лимит запросов к API |
 | `MAX_API_MESSAGE_RPS` | `2` | Лимит отправки сообщений |
 | `MAX_CA_BUNDLE` | — | Путь к дополнительному корневому сертификату |
-| `DATABASE_URL` | — | DSN Postgres; без неё слой БД не поднимается |
+| `DATABASE_URL` | — | **Обязательна.** DSN Postgres (`postgresql://…`) |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `bot` | Креды Postgres для compose; на проде пароль обязателен |
+| `STATS_ENABLED` | `true` | Записывать открытия разделов |
+| `STATS_SALT` | пусто | Секрет хеша посетителя; пусто — `MAX_BOT_TOKEN` |
+| `DISPLAY_UTC_OFFSET` | `3` | Часовой пояс времени в админке, часов от UTC |
 | `METRICS_ENABLED` | `false` | HTTP-сервер метрик |
 | `BUILD_TAG` | пусто | Заполняется при деплое, показывается в `/v` |
 
 Конфигурация проверяется при старте (zod-схема + ручные проверки), а не при
-первом обращении: бот не запустится с webhook без секрета. Ошибка на старте
+первом обращении: бот не запустится с webhook без секрета или без
+`DATABASE_URL`. Ошибка на старте
 дешевле, чем открытый эндпоинт или падение под нагрузкой.
 
 ---
@@ -226,7 +249,7 @@ PORT=8081
 ## Уровни доступа
 
 1. **Maintenance-гейт** (`middlewares/maintenance.ts`) — при `PROD=false`
-   пропускает только `ADMIN_IDS`. Работает как outer middleware, то есть до
+   пропускает только владельцев из `ADMIN_IDS`. Работает как outer middleware, то есть до
    фильтров: перехватывает сообщения, нажатия кнопок и `bot_started` одним
    кодом. В группах при блокировке молчит — отвечать на каждое упоминание
    значит спамить чат.
@@ -236,9 +259,13 @@ PORT=8081
    поэтому при нескольких репликах лимит становится приблизительным; для
    честного распределённого лимита нужен Redis.
 
-3. **Обёртка `adminOnly`** (`handlers/admin.ts`) — служебные команды.
-   Неадминам такие команды не отвечают вовсе: сообщение «недостаточно прав»
-   само по себе раскрывает наличие скрытых функций.
+3. **Роли админки** (`handlers/admin.ts`). Владелец — `ADMIN_IDS` из `.env`:
+   всё, включая управление администраторами. Администратор — добавлен
+   владельцем в «👥 Админы» (таблица `staff`): правка разделов, статистика,
+   файл, журнал. Роль читается из БД на каждом событии — отозванный
+   администратор теряет доступ сразу. Неадминам `/admin`, `/v`, `/status` не
+   отвечают вовсе: сообщение «недостаточно прав» само по себе раскрывает
+   наличие скрытых функций. Админка открывается только в личке.
 
 ---
 
@@ -246,26 +273,18 @@ PORT=8081
 
 ### Новый раздел меню
 
-Достаточно дописать запись в `SECTIONS` (`src/keyboards/menus.ts`) — кнопка и
-обработчик подхватят её сами:
-
-```typescript
-{
-  id: "contacts",
-  title: "📞 Контакты",
-  text: "Телефон: +7 000 000-00-00",
-},
-```
-
-Есть тест, который проверяет, что каждая кнопка ведёт в существующий раздел.
+Код не нужен: `/admin` → «➕ Добавить подраздел». Стартовые разделы для
+новых установок — в seed миграции `migrations/1763294400000_initial.js`
+(для уже развёрнутой БД — новой миграцией или файлом «📦 Файл → ⬆️ Загрузить»).
 
 ### Новая команда
 
 ```typescript
 // src/handlers/myFeature.ts
-import type { Bot, Context } from "@maxhub/max-bot-api";
+import type { Context } from "@maxhub/max-bot-api";
+import type { Dispatcher } from "./index.js";
 
-export function register(bot: Bot): void {
+export function register(bot: Dispatcher): void {
   bot.command("mycommand", onMyCommand);
 }
 
@@ -274,52 +293,54 @@ async function onMyCommand(ctx: Context): Promise<void> {
 }
 ```
 
-Затем добавить `myFeature.register(bot)` в `handlers/index.ts` — **до**
-`menu.register(bot)`, иначе catch-all на свободный текст перехватит команду
-раньше.
+Затем добавить `myFeature.register(bot)` в `registerHandlers()`
+(`handlers/index.ts`) — **до** `menu.register(bot)`, иначе catch-all на
+свободный текст перехватит команду раньше.
 
 ### Новый тип кнопки
 
-Опишите payload классом в `keyboards/callbacks.ts` (по образцу `MenuPayload`)
-и обработайте его в `handlers/menu.ts::onCallback`. Формат payload задан в
-одном месте намеренно.
+Опишите payload классом в `keyboards/callbacks.ts` (по образцу
+`SectionPayload`/`AdminPayload`) и обработайте его своим `bot.action(/^x:/, …)`
+до `menu.register()`. Новое действие админки — значение в `AdminAction`,
+кнопка в `keyboards/menus.ts`, ветка в `handlers/editor.ts` (над разделом) или
+`handlers/tools.ts` (инструмент главного экрана). Формат payload задан в одном
+месте намеренно.
 
 ---
 
 ## База данных
 
-Слой БД опционален. Бот без состояния работает без него — каталог `src/db/`
-и `migrations/` можно удалить целиком, а `pg`/`node-pg-migrate` — из
-`optionalDependencies` в `package.json`.
+БД обязательна: разделы меню, администраторы, статистика и журнал живут в
+Postgres.
 
-### Включение
+| Таблица | Что хранит |
+|---|---|
+| `sections` | дерево разделов: `parent_id` (корень — `NULL`, его текст — приветствие), `title`, `text`, `position`, `url`, `image_token`; удаление каскадное |
+| `staff` | администраторы, добавленные владельцем |
+| `section_views` | открытия разделов: HMAC-хеш посетителя вместо user_id; удаление раздела ставит `NULL` |
+| `audit_log` | журнал правок админки — в той же транзакции, что и правка |
 
-```bash
-# .env
-DATABASE_URL=postgresql://bot:bot@db:5432/bot
-```
-
-### Работа с миграциями
+### Миграции
 
 ```bash
 make up-local-db                          # поднять Postgres в Docker
-make migration m="добавил таблицу users"  # создать ревизию (node-pg-migrate)
-make migrate                              # применить
+make migration m="добавил таблицу"        # создать ревизию (node-pg-migrate)
+make migrate                              # применить к DATABASE_URL из .env
 ```
 
 Миграции — обычные JS-файлы (`.node-pg-migraterc` задаёт `migration-file-
 language: js`), DSN берётся из `DATABASE_URL` в `.env` — `make migrate` сам
-подгружает `.env` перед вызовом `node-pg-migrate`.
+подгружает `.env`. `make run` применяет миграции перед стартом, контейнер —
+тоже (`CMD` в `docker/Dockerfile`). Начальная миграция написана чистым SQL
+через `pgm.sql()`: ту же схему тесты прогоняют на PGlite.
 
 ### Использование
 
 ```typescript
-import { UserRepository } from "./db/repositories/users.js";
-import { getPool, withTransaction } from "./db/pool.js";
+import { withTransaction } from "./db/pool.js";
+import { SectionRepository } from "./db/repositories/sections.js";
 
-await withTransaction(async (client) => {
-  await new UserRepository(client).upsert(123, "ivan");
-});
+const root = await withTransaction((db) => new SectionRepository(db).root());
 ```
 
 Весь SQL держится в репозиториях. Обработчики к пулу напрямую не ходят: иначе
@@ -348,19 +369,20 @@ Prometheus изнутри сети. Счётчики описаны в `src/metr
 |---|---|
 | `make init` | Создать новый проект из шаблона |
 | `make install` | Установить зависимости (pnpm) |
-| `make run` | Запустить бота локально |
+| `make run` | Миграции + запуск бота локально |
 | `make build` | Собрать TypeScript в `dist/` |
 | `make lint` | `biome check` |
 | `make format` | Автоформатирование и починка импортов |
 | `make test` | `vitest run` |
 | `make check` | Линт + тесты + сборка (перед коммитом) |
-| `make up-local` | Поднять бота в Docker |
-| `make up-local-db` | Поднять бота вместе с Postgres |
+| `make up-local` | Поднять бота и Postgres в Docker |
+| `make up-local-db` | Поднять только Postgres (для `make run`) |
 | `make down-local` | Остановить локальный стек |
 | `make logs` | Логи бота в реальном времени |
 | `make migrate` | Применить миграции |
 | `make migration m="..."` | Создать ревизию |
 | `make dump` / `make restore f=...` | Дамп и восстановление БД |
+| `make docs` | Собрать HTML-документацию в `docs/html` |
 | `make clean` | Удалить кэши и `dist/` |
 
 `make help` печатает этот список из самого Makefile.
@@ -383,11 +405,19 @@ Prometheus изнутри сети. Счётчики описаны в `src/metr
 ### Compose
 
 `docker-compose.local.yml` собирает образ из исходников — разработчику нужно
-видеть свои правки. Postgres вынесен в профиль `db` и без него не поднимается.
+видеть свои правки. Postgres поднимается вместе с ботом и слушает
+`127.0.0.1:${POSTGRES_PORT:-5433}` — для `make run` и `make migrate` с хоста.
 
 `docker-compose.prod.yml` тянет готовый образ из Harbor по тегу, выставляет
 лимиты памяти и CPU и публикует бота через внешнюю сеть `maxbots-network`,
-а не пробросом порта на хост.
+а не пробросом порта на хост. Postgres наружу не публикуется, имя хоста базы
+уникальное (`max-bot-template-db`) — чтобы не совпасть с базой другого бота
+той же сети. `POSTGRES_PASSWORD` в прод-`.env` обязателен: длинный и без
+символов `@ : / ? #` — он подставляется в DSN как есть.
+
+В обоих файлах `DATABASE_URL` для бота собирается из `POSTGRES_*` в самом
+compose: внутри сети база доступна по имени сервиса, а не по `127.0.0.1` из
+`.env`.
 
 Оба файла принимают `--env-file .env` — это обязательно. Без флага Compose
 ищет `.env` рядом с самим compose-файлом, то есть в `docker/`, и подстановка
@@ -491,15 +521,32 @@ npm-прокси. В пайплайне он маскируется и пере�
 
 ---
 
+## Документация
+
+`docs/*.md` — источник правды, `make docs` собирает из них HTML в `docs/html/`
+(открывается без сервера: `docs/html/index.html`). Главная страница — этот
+README. Стили и скрипт страниц — `scripts/docs-assets/`, разделы навигации —
+`SECTIONS` в `scripts/build-docs.ts`.
+
+---
+
 ## Тесты
 
 ```bash
 make test
 ```
 
-36 тестов: разбор и валидация конфигурации, payload'ы кнопок, ограничитель
-частоты, throttling-middleware, очередь фоновой обработки вебхука, нарезка
-длинных сообщений.
+142 теста: конфигурация, payload'ы и клавиатуры, репозиторий дерева разделов,
+сценарии админки целиком (добавить раздел → задать текст → пользователь его
+видит → удалить), картинки и откат на экран без картинки, кнопки-ссылки,
+администраторы, статистика, экспорт/импорт, журнал, ограничитель частоты,
+throttling, очередь вебхука.
+
+Сценарные тесты прогоняют апдейты через настоящую цепочку хендлеров
+(`registerHandlers()` — тот же порядок, что в проде), вызовы MAX API пишет
+`FakeApi` из `tests/helpers/bot.ts`. Postgres — PGlite (Postgres в WASM,
+в процессе, без Docker и сети), схема — из той же миграции, что в проде
+(`tests/helpers/db.ts`).
 
 Тесты герметичны: в сеть не ходят, реальный токен не используют, локальный
 `.env` игнорируют (`src/config.ts` не грузит `.env`, когда переменная
@@ -551,20 +598,35 @@ HTTP-слою, поэтому единственная точка перехва
 перестаёт ждать, фоновые обработчики доработают самостоятельно (см. комментарий
 в `src/webhook.ts`).
 
-**Опциональные зависимости — `optionalDependencies`, а не `extras`.** В Python
-`db`/`metrics` ставятся по требованию (`uv sync --extra db`, по умолчанию
-отсутствуют). В Node аналог — `optionalDependencies` в `package.json`:
-устанавливаются по умолчанию вместе с `pnpm install`, но код всегда
-импортирует их лениво (`await import("pg")`), поэтому их можно убрать из
-`package.json` полностью, если БД и метрики не нужны.
+**Метрики — `optionalDependencies`, а не `extras`.** В Python `metrics`
+ставится по требованию (`uv sync --extra metrics`). В Node аналог —
+`optionalDependencies` в `package.json`: `prom-client` ставится вместе с
+`pnpm install`, но импортируется лениво, поэтому его можно убрать из
+`package.json`, если метрики не нужны.
 
 **DSN без суффикса драйвера.** Python-версия требует `postgresql+asyncpg://`
-и проверяет это при старте — синхронный драйвер иначе не заработал бы molча.
+и проверяет это при старте — синхронный драйвер иначе не заработал бы молча.
 `pg` в Node всегда асинхронный, поэтому `DATABASE_URL` — обычный
-`postgresql://` без дополнительной проверки.
+`postgresql://` (проверяется только схема DSN).
+
+**SQL без ORM, тесты на PGlite.** Вместо SQLAlchemy + Alembic — `pg` и
+node-pg-migrate, весь SQL в `src/db/repositories/`. Python-тесты гоняют
+переносимые запросы на SQLite; здесь — на PGlite, то есть на настоящем
+Postgres-диалекте (рекурсивные CTE, `ON CONFLICT`, каскады).
+
+**Длина ввода — в символах Unicode.** Лимиты MAX (64 на кнопку, 4000 на
+текст) считаются как `len()` в Python, а не как `String.length`, который
+посчитал бы эмодзи за два.
+
+**Повтор отправки файла экспорта.** Официальный клиент не ждёт, пока MAX
+обработает загруженный файл, поэтому на ответ `attachment.not.ready` бот
+повторяет отправку до 5 раз с растущей паузой (`handlers/tools.ts`).
+
+**Формат файла разделов общий.** `max-bot-sections`, версия 1 — файл,
+выгруженный Python-ботом, загружается в TS-бот и наоборот.
 
 ---
 
-Разделы меню, тексты и логика в шаблоне демонстрационные — заменяйте их своими.
+Разделы меню и тексты в шаблоне демонстрационные — правьте их в админке.
 Инфраструктура (конфигурация, лимиты, режимы, сборка, деплой) переносится как
 есть.
