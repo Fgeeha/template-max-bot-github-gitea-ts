@@ -105,4 +105,6 @@ USER ${UID}:${GID}
 # Порт слушается только при BOT_MODE=webhook; в polling EXPOSE — просто
 # декларация для оркестратора.
 EXPOSE 8081
-CMD ["node", "dist/index.js"]
+# Миграции перед стартом: свежая БД получает схему и демо-разделы,
+# существующая — только новые ревизии. exec — чтобы SIGTERM дошёл до бота.
+CMD ["sh", "-c", "node_modules/.bin/node-pg-migrate up && exec node dist/index.js"]

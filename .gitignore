@@ -49,4 +49,5 @@ certs/*.pem
 .claude-flow/
 .swarm/
 .mcp.json
+.serena/
 ruvector.db

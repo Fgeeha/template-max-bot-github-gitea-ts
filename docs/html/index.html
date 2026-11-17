@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>max-bot-template</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%239a3f12'/%3E%3Cpath d='M8 3.2a3 3 0 0 0-3 3c0 2.3 3 6.2 3 6.2s3-3.9 3-6.2a3 3 0 0 0-3-3zm0 4.2a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4z' fill='%23fff'/%3E%3C/svg%3E"></head>
+<body><div class="layout">
+<button class="btn menu-btn" type="button" aria-label="Открыть меню разделов">☰ max-bot-template</button>
+<nav class="side" aria-label="Разделы документации">
+<a class="brand" href="index.html"><span class="logo">💬</span><span><b>max-bot-template</b><small>Документация · MAX</small></span></a>
+<label class="search"><input id="q" type="search" placeholder="Найти на странице  ( / )" aria-label="Найти на странице"><span class="hits" id="hits" aria-live="polite"></span></label>
+<h4>Работа с ботом</h4><ul><li><a href="admin-guide.html" title="Админка, разделы, статистика"><span class="ic">🛠</span>Руководство администратора</a></li><li><a href="index.html" class="active" title="Docker, переменные, команды"><span class="ic">🚀</span>Запуск и настройка</a></li></ul><h4>Разработка</h4><ul></ul>
+<div class="tools"><button class="btn" id="theme" type="button">Тема</button></div>
+</nav>
+<main class="content"><div class="page wide"><article><section class="hero"><span class="eyebrow">Документация · max-bot-template</span><h1>max-bot-template</h1><p>Готовая основа для ботов на платформе <a href="https://max.ru">MAX</a> с настроенным
+CI/CD под <strong>GitHub Actions</strong> и <strong>Gitea Actions</strong>. TypeScript-аналог шаблона
+<a href="../template-max-bot-github-gitea">template-max-bot-github-gitea</a> — та же
+архитектура и те же решения, перенесённые на Node.js.</p><div class="actions"><a class="primary" href="admin-guide.html">🛠 Руководство администратора</a><a href="#быстрый-старт">🚀 Быстрый старт</a></div></section><h2 id="docs">Разделы документации</h2><h3>Работа с ботом</h3><div class="cards"><a class="card" href="admin-guide.html"><span class="ic">🛠</span><span><b>Руководство администратора</b><span>Админка, разделы, статистика</span></span></a><a class="card" href="index.html"><span class="ic">🚀</span><span><b>Запуск и настройка</b><span>Docker, переменные, команды</span></span></a></div><h3>Разработка</h3><div class="cards"></div>
+<p>Работа с платформой построена на официальном клиенте
+<a href="https://github.com/max-messenger/max-bot-api-client-ts"><code>@maxhub/max-bot-api</code></a>
+(Telegraf-подобный API: <code>bot.command()</code>/<code>bot.hears()</code>/<code>bot.action()</code>,
+<code>ctx.reply()</code>, <code>Keyboard.inlineKeyboard()</code>). Он поддерживает только long
+polling — webhook в нём не реализован, поэтому фоновая очередь приёма
+апдейтов (<code>src/webhook.ts</code>) и подписка/отписка от webhook
+(<code>src/maxWebhookSubscription.ts</code>, единственный best-effort фрагмент — путь
+<code>/subscriptions</code> нигде не покрыт официальным клиентом) остались собственными.
+Троттлинг, ретраи на 429 и кастомный CA патчат <code>globalThis.fetch</code>
+(<code>src/runtime.ts</code>) — клиент не даёт для этого своих хуков.</p>
+<p>Шаблон закрывает то, что в каждом новом боте приходится писать заново:
+ограничение частоты запросов к API, корректное завершение процесса, разбор
+конфигурации с проверками, режимы polling/webhook, сборка образа и деплой с
+откатом. Из коробки это бот-визитка: дерево разделов меню хранится в Postgres
+и правится прямо в MAX командой <code>/admin</code> — без правки кода и передеплоя.
+Работа с админкой описана в <a href="admin-guide.html"><a href="admin-guide.html"><code>docs/admin-guide.md</code></a></a>.</p>
+<hr>
+<h2 id="содержание">Содержание<a class="anchor" href="#содержание" title="Permanent link">#</a></h2>
+<ul>
+<li><a href="#%D1%87%D1%82%D0%BE-%D0%B2%D0%BD%D1%83%D1%82%D1%80%D0%B8">Что внутри</a></li>
+<li><a href="#%D0%B1%D1%8B%D1%81%D1%82%D1%80%D1%8B%D0%B9-%D1%81%D1%82%D0%B0%D1%80%D1%82">Быстрый старт</a></li>
+<li><a href="#%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5-%D0%BD%D0%BE%D0%B2%D0%BE%D0%B3%D0%BE-%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82%D0%B0">Создание нового проекта</a></li>
+<li><a href="#%D1%81%D1%82%D1%80%D1%83%D0%BA%D1%82%D1%83%D1%80%D0%B0">Структура</a></li>
+<li><a href="#%D0%BA%D0%BE%D0%BD%D1%84%D0%B8%D0%B3%D1%83%D1%80%D0%B0%D1%86%D0%B8%D1%8F">Конфигурация</a></li>
+<li><a href="#%D1%80%D0%B5%D0%B6%D0%B8%D0%BC%D1%8B-%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D1%8B-polling-%D0%B8-webhook">Режимы работы: polling и webhook</a></li>
+<li><a href="#%D1%83%D1%80%D0%BE%D0%B2%D0%BD%D0%B8-%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF%D0%B0">Уровни доступа</a></li>
+<li><a href="#%D0%BA%D0%B0%D0%BA-%D0%B4%D0%BE%D0%B1%D0%B0%D0%B2%D0%B8%D1%82%D1%8C-%D1%84%D1%83%D0%BD%D0%BA%D1%86%D0%B8%D0%BE%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D0%BE%D1%81%D1%82%D1%8C">Как добавить функциональность</a></li>
+<li><a href="#%D0%B1%D0%B0%D0%B7%D0%B0-%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85">База данных</a></li>
+<li><a href="#%D0%BC%D0%B5%D1%82%D1%80%D0%B8%D0%BA%D0%B8">Метрики</a></li>
+<li><a href="#%D0%BA%D0%BE%D0%BC%D0%B0%D0%BD%D0%B4%D1%8B-makefile">Команды Makefile</a></li>
+<li><a href="#docker">Docker</a></li>
+<li><a href="#cicd">CI/CD</a></li>
+<li><a href="#%D0%B7%D0%B0%D0%BA%D1%80%D1%8B%D1%82%D1%8B%D0%B9-%D0%BA%D0%BE%D0%BD%D1%82%D1%83%D1%80">Закрытый контур</a></li>
+<li><a href="#%D0%B4%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D0%B0%D1%86%D0%B8%D1%8F">Документация</a></li>
+<li><a href="#%D1%82%D0%B5%D1%81%D1%82%D1%8B">Тесты</a></li>
+<li><a href="#%D0%BE%D1%82%D0%BB%D0%B8%D1%87%D0%B8%D1%8F-%D0%BE%D1%82-python-%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D0%B8">Отличия от Python-версии</a></li>
+</ul>
+<hr>
+<h2 id="что-внутри">Что внутри<a class="anchor" href="#что-внутри" title="Permanent link">#</a></h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>Возможность</th>
+<th>Состояние</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Режимы polling и webhook, переключение переменной</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Ограничение частоты запросов к MAX API + ретраи на 429</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Отдельный антиспам-лимит на отправку сообщений</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Корректное завершение по SIGINT/SIGTERM</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Maintenance-режим (бот виден только владельцам)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Ограничение частоты входящих событий по пользователю</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Дерево разделов меню в БД: текст, картинка, ссылка, порядок</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Админка в MAX (<code>/admin</code>): правка разделов, предпросмотр, удаление с подтверждением</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Владельцы (<code>ADMIN_IDS</code>) и администраторы, добавленные в админке</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Анонимная статистика открытий разделов (HMAC вместо user_id)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Выгрузка и загрузка разделов JSON-файлом, журнал изменений</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Команды <code>/start</code>, <code>/id</code>, <code>/admin</code>, <code>/v</code>, <code>/status</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Postgres + pg + node-pg-migrate</td>
+<td>✅ обязательно</td>
+</tr>
+<tr>
+<td>Prometheus-метрики</td>
+<td>опционально (<code>METRICS_ENABLED</code>)</td>
+</tr>
+<tr>
+<td>Подключение своего CA (УЦ Минцифры РФ)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>CI для GitHub: линт, тесты, образ в GHCR</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>CI/CD для Gitea: линт, тесты, образ в Harbor, деплой по SSH, откат</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Скрипт инициализации нового проекта</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>HTML-документация из Markdown (<code>make docs</code>)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Тесты (142 шт., Postgres в процессе через PGlite)</td>
+<td>✅</td>
+</tr>
+</tbody></table></div>
+<p><strong>Стек:</strong> Node.js 24, TypeScript 7, <a href="https://github.com/max-messenger/max-bot-api-client-ts"><code>@maxhub/max-bot-api</code></a>
+(официальный клиент MAX), zod (конфигурация), pnpm, Biome (линт + формат),
+vitest, Docker. БД — Postgres, pg + node-pg-migrate. Метрики — prom-client
+(опционально).</p>
+<hr>
+<h2 id="быстрый-старт">Быстрый старт<a class="anchor" href="#быстрый-старт" title="Permanent link">#</a></h2>
+<pre><code class="language-bash">cp .env.example .env          # задать MAX_BOT_TOKEN и ADMIN_IDS
+make install                  # pnpm install
+make up-local-db              # Postgres в Docker на 127.0.0.1:5433
+make run                      # миграции + запуск в режиме polling
+</code></pre>
+<p>Или всё в Docker одной командой: <code>make up-local</code> (бот и Postgres, миграции
+применяются при старте контейнера).</p>
+<p>Токен бота выдаёт <code>@masterbot</code> в мессенджере MAX. Свой <code>user_id</code> бот покажет
+по команде <code>/id</code>. Дальше — <code>/admin</code> в личке с ботом.</p>
+<p>По умолчанию <code>PROD=false</code> — бот отвечает только тем, чьи id перечислены в
+<code>ADMIN_IDS</code>. Это защита от преждевременного выхода к пользователям: пока бот
+не настроен, посторонний увидит заглушку.</p>
+<hr>
+<h2 id="создание-нового-проекта">Создание нового проекта<a class="anchor" href="#создание-нового-проекта" title="Permanent link">#</a></h2>
+<pre><code class="language-bash">make init
+</code></pre>
+<p>Скрипт спросит имя (kebab-case) и описание, затем:</p>
+<ul>
+<li>подставит имя в <code>package.json</code>, оба compose-файла и пайплайн Gitea;</li>
+<li>заменит README заготовкой, а этот файл сохранит как <code>docs/TEMPLATE.md</code>;</li>
+<li>удалит сам себя;</li>
+<li>начнёт историю git заново одним коммитом (<code>--keep-git</code> отключает).</li>
+</ul>
+<p>Неинтерактивно:</p>
+<pre><code class="language-bash">pnpm run init-project -- --name support-max-bot --description &quot;Бот техподдержки&quot;
+</code></pre>
+<p>После инициализации разделы меню и приветствие правятся в админке (<code>/admin</code>),
+стартовое наполнение — в миграции <code>migrations/1763294400000_initial.js</code>.</p>
+<hr>
+<h2 id="структура">Структура<a class="anchor" href="#структура" title="Permanent link">#</a></h2>
+<pre><code>src/
+├── index.ts              # точка входа: выбор режима, сборка бота, graceful shutdown
+├── config.ts              # все настройки, единый источник правды (zod)
+├── runtime.ts              # патч globalThis.fetch: лимиты, ретраи на 429, CA-bundle
+├── maxWebhookSubscription.ts # подписка/отписка от webhook (нет в официальном клиенте)
+├── webhook.ts               # приём апдейтов без удержания HTTP-соединения
+├── metrics.ts                # Prometheus (опционально)
+├── handlers/                 # обработчики событий
+│   ├── index.ts              #   регистрация — порядок важен, см. комментарий
+│   ├── start.ts              #   /start, /id и bot_started
+│   ├── menu.ts               #   навигация по разделам, свободный текст
+│   ├── admin.ts              #   права (владелец/администратор), /v, /status
+│   ├── editor.ts             #   админка разделов: /admin, кнопки, ввод
+│   ├── tools.ts              #   администраторы, статистика, файл, журнал
+│   ├── screens.ts            #   экраны админки и строки журнала
+│   ├── inputs.ts             #   проверка ввода и файла импорта
+│   └── pending.ts            #   кто какой ввод должен прислать
+├── keyboards/
+│   ├── callbacks.ts          #   типизированные payload&#39;ы кнопок
+│   └── menus.ts              #   клавиатуры из дерева разделов
+├── middlewares/
+│   ├── maintenance.ts        #   гейт доступа
+│   └── throttling.ts         #   лимит событий на пользователя
+└── db/
+    ├── pool.ts               #   пул соединений pg, withTransaction()
+    ├── models.ts             #   типы строк
+    └── repositories/         #   весь SQL живёт здесь
+
+docker/                  # Dockerfile + compose для local и prod
+migrations/              # ревизии node-pg-migrate (схема + демо-разделы)
+docs/                    # руководство администратора; docs/html — сборка make docs
+.github/workflows/       # CI для GitHub
+.gitea/workflows/        # CI + CD для Gitea (единый файл, см. пояснение ниже)
+tests/                   # vitest
+scripts/                 # init-project.ts, build-docs.ts
+certs/                   # дополнительные корневые сертификаты (не коммитятся)
+</code></pre>
+<p>Соглашение по размеру: файл до 400 строк, при превышении — разделять на
+модули. Все функции с типами, комментарии на русском.</p>
+<hr>
+<h2 id="конфигурация">Конфигурация<a class="anchor" href="#конфигурация" title="Permanent link">#</a></h2>
+<p>Все параметры читаются из окружения (или <code>.env</code> в корне). Полный список с
+пояснениями — в <a href=".env.example"><code>.env.example</code></a>; ниже основное.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>Переменная</th>
+<th>По умолчанию</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>MAX_BOT_TOKEN</code></td>
+<td>—</td>
+<td><strong>Обязательна.</strong> Токен бота</td>
+</tr>
+<tr>
+<td><code>BOT_MODE</code></td>
+<td><code>polling</code></td>
+<td><code>polling</code> или <code>webhook</code></td>
+</tr>
+<tr>
+<td><code>PROD</code></td>
+<td><code>false</code></td>
+<td><code>false</code> — только владельцы, <code>true</code> — все</td>
+</tr>
+<tr>
+<td><code>ADMIN_IDS</code></td>
+<td>пусто</td>
+<td>Владельцы бота, user_id через запятую</td>
+</tr>
+<tr>
+<td><code>LOG_LEVEL</code></td>
+<td><code>info</code></td>
+<td>debug/info/warning/error</td>
+</tr>
+<tr>
+<td><code>PORT</code></td>
+<td><code>8081</code></td>
+<td>Порт webhook-сервера</td>
+</tr>
+<tr>
+<td><code>WEBHOOK_HOST</code></td>
+<td>—</td>
+<td>Обязательна при <code>BOT_MODE=webhook</code></td>
+</tr>
+<tr>
+<td><code>WEBHOOK_SECRET</code></td>
+<td>—</td>
+<td>Обязательна при <code>BOT_MODE=webhook</code></td>
+</tr>
+<tr>
+<td><code>MAX_API_RPS</code></td>
+<td><code>25</code></td>
+<td>Общий лимит запросов к API</td>
+</tr>
+<tr>
+<td><code>MAX_API_MESSAGE_RPS</code></td>
+<td><code>2</code></td>
+<td>Лимит отправки сообщений</td>
+</tr>
+<tr>
+<td><code>MAX_CA_BUNDLE</code></td>
+<td>—</td>
+<td>Путь к дополнительному корневому сертификату</td>
+</tr>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td>—</td>
+<td><strong>Обязательна.</strong> DSN Postgres (<code>postgresql://…</code>)</td>
+</tr>
+<tr>
+<td><code>POSTGRES_USER</code> / <code>POSTGRES_PASSWORD</code> / <code>POSTGRES_DB</code></td>
+<td><code>bot</code></td>
+<td>Креды Postgres для compose; на проде пароль обязателен</td>
+</tr>
+<tr>
+<td><code>STATS_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Записывать открытия разделов</td>
+</tr>
+<tr>
+<td><code>STATS_SALT</code></td>
+<td>пусто</td>
+<td>Секрет хеша посетителя; пусто — <code>MAX_BOT_TOKEN</code></td>
+</tr>
+<tr>
+<td><code>DISPLAY_UTC_OFFSET</code></td>
+<td><code>3</code></td>
+<td>Часовой пояс времени в админке, часов от UTC</td>
+</tr>
+<tr>
+<td><code>METRICS_ENABLED</code></td>
+<td><code>false</code></td>
+<td>HTTP-сервер метрик</td>
+</tr>
+<tr>
+<td><code>BUILD_TAG</code></td>
+<td>пусто</td>
+<td>Заполняется при деплое, показывается в <code>/v</code></td>
+</tr>
+</tbody></table></div>
+<p>Конфигурация проверяется при старте (zod-схема + ручные проверки), а не при
+первом обращении: бот не запустится с webhook без секрета или без
+<code>DATABASE_URL</code>. Ошибка на старте
+дешевле, чем открытый эндпоинт или падение под нагрузкой.</p>
+<hr>
+<h2 id="режимы-работы-polling-и-webhook">Режимы работы: polling и webhook<a class="anchor" href="#режимы-работы-polling-и-webhook" title="Permanent link">#</a></h2>
+<p><strong>Polling</strong> (<code>BOT_MODE=polling</code>) — бот сам опрашивает платформу через
+<code>GET /updates</code>. Ничего не слушает, публичный адрес не нужен. Режим для
+разработки.</p>
+<p><strong>Webhook</strong> (<code>BOT_MODE=webhook</code>) — платформа шлёт апдейты на ваш адрес. Бот
+поднимает встроенный HTTP-сервер (<code>node:http</code>, без фреймворка), регистрирует
+подписку при старте и отдаёт <code>/healthz</code>.</p>
+<p>Что нужно для webhook:</p>
+<pre><code class="language-bash">BOT_MODE=webhook
+WEBHOOK_HOST=https://bot.example.ru      # публичный https без пути
+WEBHOOK_SECRET=$(openssl rand -hex 32)   # обязателен
+PORT=8081
+</code></pre>
+<p>Секрет обязателен намеренно: без него маршрут принимал бы любой POST от кого
+угодно. Шаблон отказывается стартовать в такой конфигурации.</p>
+<h3 id="обработка-апдейтов-вебхука">Обработка апдейтов вебхука<a class="anchor" href="#обработка-апдейтов-вебхука" title="Permanent link">#</a></h3>
+<p>Маршрут вебхука (<code>src/webhook.ts</code>) отвечает MAX сразу, а обработка уходит в
+фоновую задачу — HTTP-соединение не удерживается на всё время работы
+хендлера. Очередь фоновой обработки ограничена <code>WEBHOOK_MAX_PENDING_UPDATES</code>:
+сверх лимита новые апдейты получают 503 (MAX повторит доставку), а не копятся
+в открытых сокетах. Текущий размер очереди виден в <code>/healthz</code> полем
+<code>pending_updates</code>. При остановке бот ждёт <code>WEBHOOK_DRAIN_TIMEOUT</code> секунд, чтобы
+дообработать уже принятое — с оговоркой: в отличие от <code>asyncio.Task</code> в Python,
+<code>Promise</code> в JS нельзя отменить, поэтому по истечении таймаута метод просто
+перестаёт ждать (см. <a href="#%D0%BE%D1%82%D0%BB%D0%B8%D1%87%D0%B8%D1%8F-%D0%BE%D1%82-python-%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D0%B8">«Отличия от Python-версии»</a>).</p>
+<h3 id="про-дубли-апдейтов">Про дубли апдейтов<a class="anchor" href="#про-дубли-апдейтов" title="Permanent link">#</a></h3>
+<p>Платформа повторяет апдейт, если не получила подтверждение вовремя.
+Дедупликации по <code>update_id</code> в шаблоне <strong>нет</strong> — если ваши обработчики
+выполняют неидемпотентные действия (списание, запись в БД, отправка
+уведомления), добавьте её сами.</p>
+<hr>
+<h2 id="уровни-доступа">Уровни доступа<a class="anchor" href="#уровни-доступа" title="Permanent link">#</a></h2>
+<ol>
+<li><p><strong>Maintenance-гейт</strong> (<code>middlewares/maintenance.ts</code>) — при <code>PROD=false</code>
+пропускает только владельцев из <code>ADMIN_IDS</code>. Работает как outer middleware, то есть до
+фильтров: перехватывает сообщения, нажатия кнопок и <code>bot_started</code> одним
+кодом. В группах при блокировке молчит — отвечать на каждое упоминание
+значит спамить чат.</p>
+</li>
+<li><p><strong>Ограничение частоты</strong> (<code>middlewares/throttling.ts</code>) — не чаще одного
+события на пользователя в 0.5 с. Состояние хранится в памяти процесса,
+поэтому при нескольких репликах лимит становится приблизительным; для
+честного распределённого лимита нужен Redis.</p>
+</li>
+<li><p><strong>Роли админки</strong> (<code>handlers/admin.ts</code>). Владелец — <code>ADMIN_IDS</code> из <code>.env</code>:
+всё, включая управление администраторами. Администратор — добавлен
+владельцем в «👥 Админы» (таблица <code>staff</code>): правка разделов, статистика,
+файл, журнал. Роль читается из БД на каждом событии — отозванный
+администратор теряет доступ сразу. Неадминам <code>/admin</code>, <code>/v</code>, <code>/status</code> не
+отвечают вовсе: сообщение «недостаточно прав» само по себе раскрывает
+наличие скрытых функций. Админка открывается только в личке.</p>
+</li>
+</ol>
+<hr>
+<h2 id="как-добавить-функциональность">Как добавить функциональность<a class="anchor" href="#как-добавить-функциональность" title="Permanent link">#</a></h2>
+<h3 id="новый-раздел-меню">Новый раздел меню<a class="anchor" href="#новый-раздел-меню" title="Permanent link">#</a></h3>
+<p>Код не нужен: <code>/admin</code> → «➕ Добавить подраздел». Стартовые разделы для
+новых установок — в seed миграции <code>migrations/1763294400000_initial.js</code>
+(для уже развёрнутой БД — новой миграцией или файлом «📦 Файл → ⬆️ Загрузить»).</p>
+<h3 id="новая-команда">Новая команда<a class="anchor" href="#новая-команда" title="Permanent link">#</a></h3>
+<pre><code class="language-typescript">// src/handlers/myFeature.ts
+import type { Context } from &quot;@maxhub/max-bot-api&quot;;
+import type { Dispatcher } from &quot;./index.js&quot;;
+
+export function register(bot: Dispatcher): void {
+  bot.command(&quot;mycommand&quot;, onMyCommand);
+}
+
+async function onMyCommand(ctx: Context): Promise&lt;void&gt; {
+  await ctx.reply(&quot;Ответ&quot;);
+}
+</code></pre>
+<p>Затем добавить <code>myFeature.register(bot)</code> в <code>registerHandlers()</code>
+(<code>handlers/index.ts</code>) — <strong>до</strong> <code>menu.register(bot)</code>, иначе catch-all на
+свободный текст перехватит команду раньше.</p>
+<h3 id="новый-тип-кнопки">Новый тип кнопки<a class="anchor" href="#новый-тип-кнопки" title="Permanent link">#</a></h3>
+<p>Опишите payload классом в <code>keyboards/callbacks.ts</code> (по образцу
+<code>SectionPayload</code>/<code>AdminPayload</code>) и обработайте его своим <code>bot.action(/^x:/, …)</code>
+до <code>menu.register()</code>. Новое действие админки — значение в <code>AdminAction</code>,
+кнопка в <code>keyboards/menus.ts</code>, ветка в <code>handlers/editor.ts</code> (над разделом) или
+<code>handlers/tools.ts</code> (инструмент главного экрана). Формат payload задан в одном
+месте намеренно.</p>
+<hr>
+<h2 id="база-данных">База данных<a class="anchor" href="#база-данных" title="Permanent link">#</a></h2>
+<p>БД обязательна: разделы меню, администраторы, статистика и журнал живут в
+Postgres.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>Таблица</th>
+<th>Что хранит</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>sections</code></td>
+<td>дерево разделов: <code>parent_id</code> (корень — <code>NULL</code>, его текст — приветствие), <code>title</code>, <code>text</code>, <code>position</code>, <code>url</code>, <code>image_token</code>; удаление каскадное</td>
+</tr>
+<tr>
+<td><code>staff</code></td>
+<td>администраторы, добавленные владельцем</td>
+</tr>
+<tr>
+<td><code>section_views</code></td>
+<td>открытия разделов: HMAC-хеш посетителя вместо user_id; удаление раздела ставит <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>audit_log</code></td>
+<td>журнал правок админки — в той же транзакции, что и правка</td>
+</tr>
+</tbody></table></div>
+<h3 id="миграции">Миграции<a class="anchor" href="#миграции" title="Permanent link">#</a></h3>
+<pre><code class="language-bash">make up-local-db                          # поднять Postgres в Docker
+make migration m=&quot;добавил таблицу&quot;        # создать ревизию (node-pg-migrate)
+make migrate                              # применить к DATABASE_URL из .env
+</code></pre>
+<p>Миграции — обычные JS-файлы (<code>.node-pg-migraterc</code> задаёт <code>migration-file- language: js</code>), DSN берётся из <code>DATABASE_URL</code> в <code>.env</code> — <code>make migrate</code> сам
+подгружает <code>.env</code>. <code>make run</code> применяет миграции перед стартом, контейнер —
+тоже (<code>CMD</code> в <code>docker/Dockerfile</code>). Начальная миграция написана чистым SQL
+через <code>pgm.sql()</code>: ту же схему тесты прогоняют на PGlite.</p>
+<h3 id="использование">Использование<a class="anchor" href="#использование" title="Permanent link">#</a></h3>
+<pre><code class="language-typescript">import { withTransaction } from &quot;./db/pool.js&quot;;
+import { SectionRepository } from &quot;./db/repositories/sections.js&quot;;
+
+const root = await withTransaction((db) =&gt; new SectionRepository(db).root());
+</code></pre>
+<p>Весь SQL держится в репозиториях. Обработчики к пулу напрямую не ходят: иначе
+запросы расползаются по слоям и их невозможно ни переиспользовать, ни
+протестировать отдельно.</p>
+<hr>
+<h2 id="метрики">Метрики<a class="anchor" href="#метрики" title="Permanent link">#</a></h2>
+<pre><code class="language-bash"># .env
+METRICS_ENABLED=true
+METRICS_ADDR=:9090
+</code></pre>
+<p>Сервер поднимается на отдельном порту и наружу не публикуется — его забирает
+Prometheus изнутри сети. Счётчики описаны в <code>src/metrics.ts</code>. <code>prom-client</code> —
+<code>optionalDependency</code>, импортируется лениво.</p>
+<hr>
+<h2 id="команды-makefile">Команды Makefile<a class="anchor" href="#команды-makefile" title="Permanent link">#</a></h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>Команда</th>
+<th>Действие</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>make init</code></td>
+<td>Создать новый проект из шаблона</td>
+</tr>
+<tr>
+<td><code>make install</code></td>
+<td>Установить зависимости (pnpm)</td>
+</tr>
+<tr>
+<td><code>make run</code></td>
+<td>Миграции + запуск бота локально</td>
+</tr>
+<tr>
+<td><code>make build</code></td>
+<td>Собрать TypeScript в <code>dist/</code></td>
+</tr>
+<tr>
+<td><code>make lint</code></td>
+<td><code>biome check</code></td>
+</tr>
+<tr>
+<td><code>make format</code></td>
+<td>Автоформатирование и починка импортов</td>
+</tr>
+<tr>
+<td><code>make test</code></td>
+<td><code>vitest run</code></td>
+</tr>
+<tr>
+<td><code>make check</code></td>
+<td>Линт + тесты + сборка (перед коммитом)</td>
+</tr>
+<tr>
+<td><code>make up-local</code></td>
+<td>Поднять бота и Postgres в Docker</td>
+</tr>
+<tr>
+<td><code>make up-local-db</code></td>
+<td>Поднять только Postgres (для <code>make run</code>)</td>
+</tr>
+<tr>
+<td><code>make down-local</code></td>
+<td>Остановить локальный стек</td>
+</tr>
+<tr>
+<td><code>make logs</code></td>
+<td>Логи бота в реальном времени</td>
+</tr>
+<tr>
+<td><code>make migrate</code></td>
+<td>Применить миграции</td>
+</tr>
+<tr>
+<td><code>make migration m=&quot;...&quot;</code></td>
+<td>Создать ревизию</td>
+</tr>
+<tr>
+<td><code>make dump</code> / <code>make restore f=...</code></td>
+<td>Дамп и восстановление БД</td>
+</tr>
+<tr>
+<td><code>make docs</code></td>
+<td>Собрать HTML-документацию в <code>docs/html</code></td>
+</tr>
+<tr>
+<td><code>make clean</code></td>
+<td>Удалить кэши и <code>dist/</code></td>
+</tr>
+</tbody></table></div>
+<p><code>make help</code> печатает этот список из самого Makefile.</p>
+<hr>
+<h2 id="docker">Docker<a class="anchor" href="#docker" title="Permanent link">#</a></h2>
+<p>Образ многостадийный (<code>docker/Dockerfile</code>):</p>
+<ul>
+<li><strong>base</strong> — зависимости и код, <code>pnpm build</code> в TypeScript; отдельный слой на
+<code>package.json</code>/<code>pnpm-lock.yaml</code>, чтобы правка кода не тянула переустановку
+пакетов;</li>
+<li><strong>test</strong> — гоняет <code>biome check</code> и <code>vitest</code> внутри собранного образа; эту
+цель использует CI, проверяя ровно ту среду, что поедет на прод;</li>
+<li><strong>runtime</strong> — прод-образ: <code>pnpm prune --prod</code> убирает dev-зависимости
+(typescript, vitest, biome, tsx), запуск от непривилегированного
+пользователя (<code>appuser</code>, uid 10001).</li>
+</ul>
+<h3 id="compose">Compose<a class="anchor" href="#compose" title="Permanent link">#</a></h3>
+<p><code>docker-compose.local.yml</code> собирает образ из исходников — разработчику нужно
+видеть свои правки. Postgres поднимается вместе с ботом и слушает
+<code>127.0.0.1:${POSTGRES_PORT:-5433}</code> — для <code>make run</code> и <code>make migrate</code> с хоста.</p>
+<p><code>docker-compose.prod.yml</code> тянет готовый образ из Harbor по тегу, выставляет
+лимиты памяти и CPU и публикует бота через внешнюю сеть <code>maxbots-network</code>,
+а не пробросом порта на хост. Postgres наружу не публикуется, имя хоста базы
+уникальное (<code>max-bot-template-db</code>) — чтобы не совпасть с базой другого бота
+той же сети. <code>POSTGRES_PASSWORD</code> в прод-<code>.env</code> обязателен: длинный и без
+символов <code>@ : / ? #</code> — он подставляется в DSN как есть.</p>
+<p>В обоих файлах <code>DATABASE_URL</code> для бота собирается из <code>POSTGRES_*</code> в самом
+compose: внутри сети база доступна по имени сервиса, а не по <code>127.0.0.1</code> из
+<code>.env</code>.</p>
+<p>Оба файла принимают <code>--env-file .env</code> — это обязательно. Без флага Compose
+ищет <code>.env</code> рядом с самим compose-файлом, то есть в <code>docker/</code>, и подстановка
+<code>${PORT}</code> в <code>ports:</code> молча берёт значение по умолчанию. Makefile подставляет
+флаг сам.</p>
+<p>Healthcheck в прод-конфигурации бьёт в <code>/healthz</code> (через <code>node -e</code>, без
+дополнительных зависимостей) и потому работает только при <code>BOT_MODE=webhook</code>.
+Для polling его нужно убрать, иначе исправный бот будет помечен <code>unhealthy</code>.</p>
+<hr>
+<h2 id="cicd">CI/CD<a class="anchor" href="#cicd" title="Permanent link">#</a></h2>
+<h3 id="github-actions-githubworkflowsciyml">GitHub Actions (<code>.github/workflows/ci.yml</code>)<a class="anchor" href="#github-actions-githubworkflowsciyml" title="Permanent link">#</a></h3>
+<p>Три задачи: <code>lint</code> → <code>test</code> → <code>build</code>. Сборка проверяет валидность обоих
+compose-файлов, собирает образ и публикует его в GHCR (на pull request —
+только собирает, без публикации). Теги: <code>latest</code> на дефолтной ветке,
+семантические на <code>v*.*.*</code>, <code>sha-&lt;short&gt;</code> всегда.</p>
+<h3 id="gitea-actions-giteaworkflowspipelineyml">Gitea Actions (<code>.gitea/workflows/pipeline.yml</code>)<a class="anchor" href="#gitea-actions-giteaworkflowspipelineyml" title="Permanent link">#</a></h3>
+<p>Один файл на весь цикл: <code>lint</code> → <code>test</code> → <code>build</code> → <code>release-image</code> →
+<code>deploy</code> → <code>rollback</code>.</p>
+<p><strong>Почему один файл, а не ci.yml + cd.yml.</strong> В Gitea Actions нет события
+<code>workflow_run</code> (<a href="https://github.com/go-gitea/gitea/issues/24898">gitea#24898</a>),
+поэтому запустить деплой «после успешного CI» из отдельного файла нечем.
+Единственный рабочий способ выстроить зависимость — <code>needs:</code> внутри одного
+файла.</p>
+<p>Не добавляйте рядом второй workflow с теми же триггерами: Gitea запускает
+каждый файл в <code>.gitea/workflows/</code> независимо, и вы получите двойные прогоны.</p>
+<p><strong>Что происходит при пуше тега <code>vX.Y.Z</code>:</strong></p>
+<ol>
+<li><code>build</code> собирает образ и публикует его как <code>sha-&lt;short&gt;</code>;</li>
+<li><code>release-image</code> находит этот образ и перетегивает в <code>vX.Y.Z</code> без
+пересборки (если не нашёл — собирает из исходников тега);</li>
+<li><code>deploy</code> копирует compose на прод-хост, сохраняет предыдущий тег в
+<code>.image_tag.previous</code>, делает <code>pull</code> и <code>up -d</code>, затем проверяет, что
+контейнер запущен и не уходит в рестарт-петлю;</li>
+<li><code>rollback</code> срабатывает автоматически при провале и возвращает предыдущий
+тег.</li>
+</ol>
+<p>Файл <code>.env</code> через пайплайн не ходит: боевые секреты лежат на прод-хосте
+постоянно.</p>
+<p><strong>Требуемые Gitea Variables:</strong> <code>HARBOR_REGISTRY</code>, <code>HARBOR_PROJECT</code>,
+<code>HARBOR_IMAGE</code>, <code>RUNNER_LABEL</code>, <code>PROD_HOST</code>, <code>PROD_USER</code>, <code>PROD_PATH</code>,
+<code>NPM_REGISTRY</code> (опц.).</p>
+<p><strong>Требуемые Gitea Secrets:</strong> <code>HARBOR_USERNAME</code>, <code>HARBOR_PASSWORD</code>,
+<code>SSH_PRIVATE_KEY</code>, <code>NPM_REGISTRY_TOKEN</code> (опц.).</p>
+<h3 id="про-smoke-тест-образа">Про smoke-тест образа<a class="anchor" href="#про-smoke-тест-образа" title="Permanent link">#</a></h3>
+<p>Полный старт бота в CI не проверяется: с плейсхолдер-токеном первый же запрос
+к API вернёт ошибку авторизации, и гейт был бы красным при полностью исправной
+сборке. Вместо этого проверяется импорт собранного модуля конфигурации внутри
+готового образа — он тянет все зависимости и строит конфигурацию, то есть
+ловит именно ошибки сборки, без сети и без реального токена.</p>
+<hr>
+<h2 id="закрытый-контур">Закрытый контур<a class="anchor" href="#закрытый-контур" title="Permanent link">#</a></h2>
+<p>Шаблон настроен на работу за периметром, но остаётся работоспособным снаружи.</p>
+<p><strong>По умолчанию</strong> источники указывают на внутренние зеркала: <code>harbor.volganet.ru</code>
+(образы), <code>nexus.volganet.ru</code> (APT), Gitea Variable <code>NPM_REGISTRY</code> (npm-прокси,
+если он есть). Все они параметризованы.</p>
+<p><strong>Сборка с доступом в интернет:</strong></p>
+<pre><code class="language-bash">BASE_IMAGE=node:24-bookworm-slim \
+POSTGRES_IMAGE=postgres:18-alpine \
+USE_NEXUS_APT=0 \
+make up-local
+</code></pre>
+<p>Workflow для GitHub уже собирает с публичными источниками — у его раннера
+доступа к контуру нет.</p>
+<p><strong>Раннер Gitea.</strong> В отличие от Python-версии шаблона (которой приходится
+вендорить бинарь <code>uv</code> в <code>build/uv/</code>, потому что раннер не может скачать его с
+astral.sh), здесь ничего вендорить не нужно: <code>corepack</code> (менеджер пакетных
+менеджеров) входит в поставку Node.js, и <code>pnpm</code> активируется одной командой
+<code>corepack enable</code>. Раннеру достаточно иметь предустановленный Node 24.</p>
+<p><strong>Сертификаты.</strong> Если цепочка API подписана УЦ, которого нет в системном
+хранилище (например, Минцифры РФ), есть два пути — положить <code>.crt</code> в
+<code>certs/</code> (действует на весь контейнер) или указать <code>MAX_CA_BUNDLE</code>
+(действует только на соединения бота). Подробности в
+<a href="index.html"><code>certs/README.md</code></a>.</p>
+<p><strong>Токены в реестре.</strong> <code>NPM_REGISTRY</code> может содержать креды внутреннего
+npm-прокси. В пайплайне он маскируется и передаётся через окружение шага.</p>
+<hr>
+<h2 id="документация">Документация<a class="anchor" href="#документация" title="Permanent link">#</a></h2>
+<p><code>docs/*.md</code> — источник правды, <code>make docs</code> собирает из них HTML в <code>docs/html/</code>
+(открывается без сервера: <code>docs/html/index.html</code>). Главная страница — этот
+README. Стили и скрипт страниц — <code>scripts/docs-assets/</code>, разделы навигации —
+<code>SECTIONS</code> в <code>scripts/build-docs.ts</code>.</p>
+<hr>
+<h2 id="тесты">Тесты<a class="anchor" href="#тесты" title="Permanent link">#</a></h2>
+<pre><code class="language-bash">make test
+</code></pre>
+<p>142 теста: конфигурация, payload&#39;ы и клавиатуры, репозиторий дерева разделов,
+сценарии админки целиком (добавить раздел → задать текст → пользователь его
+видит → удалить), картинки и откат на экран без картинки, кнопки-ссылки,
+администраторы, статистика, экспорт/импорт, журнал, ограничитель частоты,
+throttling, очередь вебхука.</p>
+<p>Сценарные тесты прогоняют апдейты через настоящую цепочку хендлеров
+(<code>registerHandlers()</code> — тот же порядок, что в проде), вызовы MAX API пишет
+<code>FakeApi</code> из <code>tests/helpers/bot.ts</code>. Postgres — PGlite (Postgres в WASM,
+в процессе, без Docker и сети), схема — из той же миграции, что в проде
+(<code>tests/helpers/db.ts</code>).</p>
+<p>Тесты герметичны: в сеть не ходят, реальный токен не используют, локальный
+<code>.env</code> игнорируют (<code>src/config.ts</code> не грузит <code>.env</code>, когда переменная
+<code>VITEST</code> выставлена — vitest сам её ставит на время прогона).</p>
+<p>Помощник <code>withEnv()</code> из <code>tests/helpers/env.ts</code> задаёт переменные окружения так
+же, как это делает прод, — заодно проверяется и сам разбор конфигурации:</p>
+<pre><code class="language-typescript">it(&quot;разбирает список admin id&quot;, () =&gt; {
+  const settings = withEnv({ ADMIN_IDS: &quot; 123, 456 ,789 &quot; });
+  expect(settings.adminIdsSet).toEqual(new Set([123, 456, 789]));
+});
+</code></pre>
+<hr>
+<h2 id="отличия-от-python-версии">Отличия от Python-версии<a class="anchor" href="#отличия-от-python-версии" title="Permanent link">#</a></h2>
+<p>Короткий список мест, где TypeScript-порт устроен иначе, чем оригинал, и
+почему.</p>
+<p><strong>Официальный клиент вместо <code>maxapi</code>.</strong> Python-версия оборачивает библиотеку
+<code>maxapi</code>. Здесь используется официальный <code>@maxhub/max-bot-api</code> — тот же
+принцип (сторонний/официальный клиент под собственной инфраструктурой лимитов
+и очереди), но с настоящим, поддерживаемым SDK вместо стороннего.</p>
+<p><strong>Webhook собран поверх официального клиента, а не входит в него.</strong>
+<code>@maxhub/max-bot-api</code> поддерживает только long polling. Для webhook шаблон
+конструирует <code>Context</code> из сырого JSON и прогоняет её через
+<code>bot.middleware()</code> — так вся маршрутизация (<code>bot.command()</code>/<code>bot.action()</code>/
+<code>bot.on()</code>, зарегистрированные в <code>handlers/</code>) работает одинаково в обоих
+режимах. Подписка/отписка от webhook (<code>maxWebhookSubscription.ts</code>) написана
+вручную и промаркирована как best-effort: это единственный путь API, который
+официальный клиент не покрывает и не подтверждает.</p>
+<p><strong>Лимиты и ретраи патчат <code>globalThis.fetch</code>, а не monkey-patch конкретного
+класса.</strong> Python-версия патчит <code>BaseConnection.request</code> библиотеки <code>maxapi</code>.
+Официальный клиент MAX для TS не даёт ни хуков, ни доступа к своему
+HTTP-слою, поэтому единственная точка перехвата — глобальный <code>fetch</code>,
+который он вызывает напрямую (<code>runtime.ts::patchFetchForRateLimiting</code>).</p>
+<p><strong>Webhook-сервер — <code>node:http</code>, без фреймворка.</strong> Вместо FastAPI + uvicorn
+здесь используется встроенный HTTP-сервер Node: обработчиков всего два
+(POST-маршрут вебхука и <code>/healthz</code>), фреймворк не оправдан.</p>
+<p><strong><code>drain()</code> не отменяет задачи.</strong> <code>asyncio.Task</code> в Python можно отменить;
+<code>Promise</code> в JS — нет. По истечении <code>WEBHOOK_DRAIN_TIMEOUT</code> бот просто
+перестаёт ждать, фоновые обработчики доработают самостоятельно (см. комментарий
+в <code>src/webhook.ts</code>).</p>
+<p><strong>Метрики — <code>optionalDependencies</code>, а не <code>extras</code>.</strong> В Python <code>metrics</code>
+ставится по требованию (<code>uv sync --extra metrics</code>). В Node аналог —
+<code>optionalDependencies</code> в <code>package.json</code>: <code>prom-client</code> ставится вместе с
+<code>pnpm install</code>, но импортируется лениво, поэтому его можно убрать из
+<code>package.json</code>, если метрики не нужны.</p>
+<p><strong>DSN без суффикса драйвера.</strong> Python-версия требует <code>postgresql+asyncpg://</code>
+и проверяет это при старте — синхронный драйвер иначе не заработал бы молча.
+<code>pg</code> в Node всегда асинхронный, поэтому <code>DATABASE_URL</code> — обычный
+<code>postgresql://</code> (проверяется только схема DSN).</p>
+<p><strong>SQL без ORM, тесты на PGlite.</strong> Вместо SQLAlchemy + Alembic — <code>pg</code> и
+node-pg-migrate, весь SQL в <code>src/db/repositories/</code>. Python-тесты гоняют
+переносимые запросы на SQLite; здесь — на PGlite, то есть на настоящем
+Postgres-диалекте (рекурсивные CTE, <code>ON CONFLICT</code>, каскады).</p>
+<p><strong>Длина ввода — в символах Unicode.</strong> Лимиты MAX (64 на кнопку, 4000 на
+текст) считаются как <code>len()</code> в Python, а не как <code>String.length</code>, который
+посчитал бы эмодзи за два.</p>
+<p><strong>Формат файла разделов общий.</strong> <code>max-bot-sections</code>, версия 1 — файл,
+выгруженный Python-ботом, загружается в TS-бот и наоборот.</p>
+<hr>
+<p>Разделы меню и тексты в шаблоне демонстрационные — правьте их в админке.
+Инфраструктура (конфигурация, лимиты, режимы, сборка, деплой) переносится как
+есть.</p>
+<nav class="pager" aria-label="Соседние страницы"><a href="admin-guide.html"><small>← Назад</small>Руководство администратора</a></nav></article></div>
+<footer>Собрано из Markdown 17.11.2026 09:10 · <code>make docs</code> · источник — <code>docs/*.md</code></footer></main>
+</div><button class="btn top" type="button" aria-label="Наверх">↑ Наверх</button>
+<script>(()=>{
+const root=document.documentElement,store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},
+set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const saved=store.get('docs-theme');if(saved)root.dataset.theme=saved;
+const tb=document.getElementById('theme');
+if(tb){const dark=()=>root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+const label=()=>{tb.textContent=dark()?'☀ Светлая':'☾ Тёмная'};label();
+tb.onclick=()=>{root.dataset.theme=dark()?'light':'dark';store.set('docs-theme',root.dataset.theme);label()}}
+const q=document.getElementById('q'),hitsEl=document.getElementById('hits');let marks=[],cur=-1;
+function clearMarks(){document.querySelectorAll('article mark').forEach(m=>m.replaceWith(...m.childNodes));
+document.querySelector('article').normalize();marks=[];cur=-1}
+function go(i){if(!marks.length)return;if(cur>=0)marks[cur].classList.remove('current');cur=(i+marks.length)%marks.length;
+marks[cur].classList.add('current');marks[cur].scrollIntoView({block:'center'});
+hitsEl.textContent=(cur+1)+' из '+marks.length+' · Enter — дальше'}
+if(q){q.addEventListener('input',()=>{clearMarks();const v=q.value.trim().toLowerCase();hitsEl.textContent='';
+if(v.length<2)return;const w=document.createTreeWalker(document.querySelector('article'),NodeFilter.SHOW_TEXT);
+const nodes=[];let n;while(n=w.nextNode()){if(n.parentElement.closest('pre .copy'))continue;
+if(n.nodeValue.toLowerCase().includes(v))nodes.push(n)}
+nodes.slice(0,300).forEach(t=>{let node=t;let i;while(node&&(i=node.nodeValue.toLowerCase().indexOf(v))>-1){
+const r=document.createRange();r.setStart(node,i);r.setEnd(node,i+v.length);const m=document.createElement('mark');
+r.surroundContents(m);marks.push(m);node=m.nextSibling&&m.nextSibling.nodeType===3?m.nextSibling:null}});
+if(marks.length)go(0);else hitsEl.textContent='Не найдено'});
+q.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go(cur+(e.shiftKey?-1:1))}
+if(e.key==='Escape'){q.value='';clearMarks();hitsEl.textContent=''}})}
+document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement!==q&&q){e.preventDefault();q.focus()}});
+document.querySelectorAll('article pre').forEach(pre=>{const b=document.createElement('button');
+b.className='btn copy';b.type='button';b.textContent='Копировать';b.onclick=()=>{
+const t=pre.querySelector('code').innerText;const done=()=>{b.textContent='Скопировано';setTimeout(()=>b.textContent='Копировать',1500)};
+if(navigator.clipboard)navigator.clipboard.writeText(t).then(done,()=>{});};pre.appendChild(b)});
+const links=[...document.querySelectorAll('.otp a')],heads=links.map(a=>document.getElementById(decodeURIComponent(a.hash.slice(1)))).filter(Boolean);
+if(heads.length&&'IntersectionObserver' in window){const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+links.forEach(a=>a.classList.toggle('on',decodeURIComponent(a.hash.slice(1))===e.target.id))}})},{rootMargin:'0px 0px -70% 0px'});heads.forEach(h=>io.observe(h))}
+const side=document.querySelector('.side'),mb=document.querySelector('.menu-btn');
+if(mb){mb.onclick=e=>{e.stopPropagation();side.classList.toggle('open')};
+document.addEventListener('click',e=>{if(side.classList.contains('open')&&!side.contains(e.target))side.classList.remove('open')})}
+const up=document.querySelector('.top');if(up){addEventListener('scroll',()=>up.classList.toggle('show',scrollY>900),{passive:true});
+up.onclick=()=>scrollTo({top:0,behavior:'smooth'})}
+})();</script></body></html>

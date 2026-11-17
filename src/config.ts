@@ -69,8 +69,24 @@ const envSchema = z.object({
   PROD: boolFromEnv().default(false),
   ADMIN_IDS: z.string().default(""),
 
-  // ---- Хранилище (опционально) -----------------------------------------------
-  DATABASE_URL: z.string().optional(),
+  // ---- Хранилище ----------------------------------------------------------------
+  // Обязательно: разделы меню и их тексты живут в БД.
+  DATABASE_URL: z
+    .string()
+    .regex(
+      /^postgres(ql)?:\/\//,
+      "DATABASE_URL должен быть Postgres DSN: postgresql://user:pass@host:5432/dbname",
+    ),
+
+  // ---- Статистика -----------------------------------------------------------------
+  // Открытия разделов (отчёт — «📊 Статистика» в /admin). Вместо user_id хранится
+  // HMAC-хеш: уникальных посчитать можно, узнать кто — нет.
+  STATS_ENABLED: boolFromEnv().default(true),
+  // Секрет хеша. Пусто — берётся MAX_BOT_TOKEN.
+  STATS_SALT: z.string().default(""),
+  // Смещение от UTC для времени в журнале и отчётах админки (часы). Фиксированное,
+  // без tzdata/Intl-зон: в slim-образе их может не быть.
+  DISPLAY_UTC_OFFSET: z.coerce.number().int().min(-12).max(14).default(3),
 
   // ---- Метрики (опционально) ---------------------------------------------------
   METRICS_ENABLED: boolFromEnv().default(false),
@@ -105,7 +121,11 @@ export class Settings {
   readonly prod: boolean;
   readonly adminIds: string;
 
-  readonly databaseUrl: string | undefined;
+  readonly databaseUrl: string;
+
+  readonly statsEnabled: boolean;
+  readonly statsSalt: string;
+  readonly displayUtcOffset: number;
 
   readonly metricsEnabled: boolean;
   readonly metricsAddr: string;
@@ -136,6 +156,10 @@ export class Settings {
     this.adminIds = env.ADMIN_IDS;
 
     this.databaseUrl = env.DATABASE_URL;
+
+    this.statsEnabled = env.STATS_ENABLED;
+    this.statsSalt = env.STATS_SALT;
+    this.displayUtcOffset = env.DISPLAY_UTC_OFFSET;
 
     this.metricsEnabled = env.METRICS_ENABLED;
     this.metricsAddr = env.METRICS_ADDR;

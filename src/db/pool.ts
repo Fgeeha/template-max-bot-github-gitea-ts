@@ -1,35 +1,38 @@
 /**
- * Пул соединений Postgres (опционально, при DATABASE_URL).
+ * Пул соединений Postgres.
  *
- * pg — optionalDependency, импортируется лениво: бот без БД не платит за
- * пакет и не открывает соединений.
+ * БД обязательна: разделы меню, администраторы, статистика и журнал живут
+ * в ней. Весь SQL — в src/db/repositories/, хендлеры к пулу напрямую не
+ * обращаются, только через withTransaction().
  */
-import type { Pool, PoolClient } from "pg";
+import pg from "pg";
 import { getSettings } from "../config.js";
 
-let pool: Pool | undefined;
+/**
+ * То, что нужно репозиториям от соединения: pg.PoolClient и PGlite в тестах
+ * подходят оба. Число строк проверяйте по RETURNING, а не по rowCount — у
+ * PGlite его нет.
+ */
+export interface Queryable {
+  query<R = Record<string, unknown>>(text: string, values?: unknown[]): Promise<{ rows: R[] }>;
+}
 
-/** Возвращает singleton пула. Создаётся лениво — до первого обращения соединения не открываются. */
-export async function getPool(): Promise<Pool> {
-  if (!pool) {
-    const settings = getSettings();
-    if (!settings.databaseUrl) {
-      throw new Error("DATABASE_URL не задан — слой БД недоступен");
-    }
-    const { Pool: PgPool } = await import("pg");
-    pool = new PgPool({
-      connectionString: settings.databaseUrl,
-      max: 10,
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 10_000,
-    });
-  }
+let pool: pg.Pool | undefined;
+
+/** Singleton пула. Создаётся лениво — до первого обращения соединения не открываются. */
+function getPool(): pg.Pool {
+  pool ??= new pg.Pool({
+    connectionString: getSettings().databaseUrl,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+  });
   return pool;
 }
 
 /** Транзакция: commit при успехе, rollback при исключении. */
-export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await (await getPool()).connect();
+export async function withTransaction<T>(fn: (db: Queryable) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const result = await fn(client);

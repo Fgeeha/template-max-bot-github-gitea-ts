@@ -7,17 +7,21 @@
 name: max-bot-template
 
 services:
-  # Postgres нужен только при работе со слоем БД. Боту без БД сервис можно
-  # удалить вместе с depends_on и томом.
+  # Postgres хранит разделы меню, администраторов, статистику и журнал.
   db:
-    profiles: ["db"]
     image: ${POSTGRES_IMAGE:-harbor.volganet.ru/dockerhub-proxy/postgres:18-alpine}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bot}
       POSTGRES_DB: ${POSTGRES_DB:-bot}
     volumes:
-      - pgdata_local:/var/lib/postgresql/data
+      # Postgres 18+ хранит кластер в /var/lib/postgresql/<версия>/docker —
+      # том монтируется на родительский каталог, иначе данные не переживут
+      # пересоздание контейнера.
+      - pgdata_local:/var/lib/postgresql
+    # Порт на localhost — для `make run` и `make migrate` с хоста.
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     healthcheck:
       # Бот стартует только после готовности БД — иначе первый запрос упадёт
       # на «connection refused», пока Postgres поднимает кластер.
@@ -42,6 +46,12 @@ services:
     env_file: ../.env
     environment:
       BOT_MODE: ${BOT_MODE:-polling}
+      # Внутри сети Compose база доступна по имени сервиса, а не по
+      # 127.0.0.1 из .env.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD:-bot}@db:5432/${POSTGRES_DB:-bot}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     # Как в проде: запас по дескрипторам для всплеска соединений вебхука.
     ulimits:

@@ -1,25 +1,60 @@
 /**
- * Служебные команды для администраторов: /v, /status.
+ * Права доступа и служебные команды для администраторов: /v, /status.
+ *
+ * Админка разделов — в handlers/editor.ts, инструменты — в handlers/tools.ts.
  *
  * Неадминам команды не отвечают вовсе — для стороннего пользователя их как бы
  * не существует. Это осознанный выбор: сообщение «недостаточно прав» само по
  * себе раскрывает наличие скрытой функциональности.
  */
-import type { Bot, Context } from "@maxhub/max-bot-api";
+import type { Context } from "@maxhub/max-bot-api";
 import { getSettings } from "../config.js";
+import { type Queryable, withTransaction } from "../db/pool.js";
+import { StaffRepository } from "../db/repositories/staff.js";
+import type { Dispatcher } from "./index.js";
 
 // Запас от лимита платформы (~4096 символов) — длинное сообщение режем сами.
 export const MAX_MESSAGE_LEN = 3800;
 
-function adminOnly(handler: (ctx: Context) => Promise<void>): (ctx: Context) => Promise<void> {
+/** user_id автора события; undefined — у системных событий его нет. */
+export function userIdOf(ctx: Context): number | undefined {
+  return ctx.user?.user_id;
+}
+
+/** Сообщение пришло в личку с ботом (не в группу). */
+export function isDialog(ctx: Context): boolean {
+  return ctx.message?.recipient.chat_type === "dialog";
+}
+
+/** Владелец — user_id из ADMIN_IDS: всё, включая управление администраторами. */
+export function isOwner(userId: number | undefined): boolean {
+  return userId !== undefined && getSettings().adminIdsSet.has(userId);
+}
+
+/**
+ * Владелец или администратор, добавленный через админку (таблица staff).
+ *
+ * Роль читается из БД на каждом событии: отозванный администратор теряет
+ * доступ сразу, без перезапуска бота.
+ */
+export async function isAdmin(userId: number | undefined, db?: Queryable): Promise<boolean> {
+  if (userId === undefined) return false;
+  if (isOwner(userId)) return true;
+  if (db) return new StaffRepository(db).exists(userId);
+  return withTransaction((tx) => new StaffRepository(tx).exists(userId));
+}
+
+/** Пропускает к хендлеру только владельцев и администраторов. */
+export function adminOnly<C extends Context>(
+  handler: (ctx: C) => Promise<void>,
+): (ctx: C) => Promise<void> {
   return async (ctx) => {
-    const userId = ctx.user?.user_id;
-    if (userId === undefined || !getSettings().adminIdsSet.has(userId)) return;
+    if (!(await isAdmin(userIdOf(ctx)))) return;
     await handler(ctx);
   };
 }
 
-export function register(bot: Bot): void {
+export function register(bot: Dispatcher): void {
   bot.command("v", adminOnly(onVersion));
   bot.command("status", adminOnly(onStatus));
 }
@@ -45,8 +80,8 @@ export function buildStatusText(): string {
     "",
     `Режим: ${settings.botMode}`,
     `PROD: ${settings.prod}`,
-    `Администраторов: ${settings.adminIdsSet.size}`,
-    `База данных: ${settings.databaseUrl ? "подключена" : "не используется"}`,
+    `Владельцев (ADMIN_IDS): ${settings.adminIdsSet.size}`,
+    `Статистика: ${settings.statsEnabled ? "включена" : "выключена"}`,
     `Метрики: ${settings.metricsEnabled ? "включены" : "выключены"}`,
     `Сборка: ${settings.buildTag || "—"}`,
   ];
